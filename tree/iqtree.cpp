@@ -4637,3 +4637,57 @@ int PhyloTree::testNumThreads() {
     return bestProc+1;
 #endif
 }
+
+void IQTree::syncBootTrees() {
+    if (MPIHelper::getInstance().getNumProcesses() == 1)
+        return;
+
+#ifdef _IQTREE_MPI
+    if (MPIHelper::getInstance().isWorker()) {
+        string message;
+
+        for (int bootId = 0; bootId < (int)boot_logl.size(); ++bootId) {
+            int score = -boot_logl[bootId];
+            string tree = boot_trees[bootId];
+
+            // assert(tree.size() > 0);
+            // if(!tree.empty())
+            //     printf("Find a tree here: %d %s\n", -score, tree.c_str());
+            message += to_string(score) + " " + tree + "#";
+        }
+        MPIHelper::getInstance().sendString(message, PROC_MASTER, BOOT_TREE_TAG);
+    }
+    else {
+        for(int it = 0; it < MPIHelper::getInstance().getNumProcesses() - 1; ++it) {
+            string message;
+            int pter = 0;
+            int worker = MPIHelper::getInstance().recvString(message);
+            //cout << message <<'\n';
+            for(int bootId = 0; bootId < boot_logl.size(); ++bootId) {
+                int score = -getNumber(message, pter);
+                string tree_str = getTree(message, pter);
+                
+                boot_logl[bootId] = score;
+                boot_trees[bootId] = tree_str;
+            }
+            cout <<"Synced bootstrap trees from process: " << worker << endl;
+        }
+    }
+
+    MPI_Barrier(MPI_COMM_WORLD);
+#endif
+}
+
+int IQTree::getNumber(string &message, int &pter) {
+    int number = 0;
+    while(message[pter] != ' ') number = number * 10 + message[pter++] - '0';
+    pter++;
+    return number;
+}
+
+string IQTree::getTree(string &message, int &pter) {
+    string tree;
+    while(message[pter] != '#') tree += message[pter++];
+    pter++;
+    return tree;
+}
