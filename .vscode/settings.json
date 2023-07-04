@@ -1,3 +1,8 @@
 {
-    "cmake.configureOnOpen": true
+    "cmake.configureOnOpen": true,
+    "files.associations": {
+        "sstream": "cpp",
+        "regex": "cpp",
+        "*.tcc": "cpp"
+    }
 }

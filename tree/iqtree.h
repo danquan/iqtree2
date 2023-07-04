@@ -987,7 +987,7 @@ protected:
     double doTreePerturbation();
 
     void estimateLoglCutoffBS();
-
+    
     //void estimateNNICutoff(Params &params);
 
 public:
