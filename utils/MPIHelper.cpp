@@ -100,10 +100,10 @@ bool MPIHelper::gotMessage() {
 }
 
 
-
 #ifdef _IQTREE_MPI
 void MPIHelper::sendString(string &str, int dest, int tag) {
     char *buf = (char*)str.c_str();
+    // printf("IT'S RUNNING HERE\n"); // It's running here ><
     MPI_Send(buf, str.length()+1, MPI_CHAR, dest, tag, MPI_COMM_WORLD);
 }
 
@@ -114,6 +114,20 @@ void MPIHelper::sendCheckpoint(Checkpoint *ckp, int dest) {
     sendString(str, dest, TREE_TAG);
 }
 
+void MPIHelper::asyncSendString(string &str, int dest, int tag, MPI_Request *req) {
+    char *buf = (char*)str.c_str();
+    MPI_Isend(buf, str.length()+1, MPI_CHAR, dest, tag, MPI_COMM_WORLD, req);
+}
+
+void MPIHelper::asyncSendCheckpoint(Checkpoint *ckp, int dest, MPI_Request *req) {
+    if(!req)
+        req = new MPI_Request;
+        
+    stringstream ss;
+    ckp->dump(ss);
+    string str = ss.str();
+    asyncSendString(str, dest, TREE_TAG, req);
+}
 
 int MPIHelper::recvString(string &str, int src, int tag) {
     MPI_Status status;

@@ -105,7 +105,20 @@ public:
     */
 
 #ifdef _IQTREE_MPI
+    /** wrapper for MPI_Send a string
+        @param[out] str string received
+        @param dest destinate process
+        @param tag message tag
+    */
     void sendString(string &str, int dest, int tag);
+    
+    /** wrapper for MPI_Isend a string
+        @param[out] str string received
+        @param dest destinate process
+        @param tag message tag
+        @param req object that specify request
+    */
+    void asyncSendString(string &str, int dest, int tag, MPI_Request *req);
 
     /** wrapper for MPI_Recv a string
         @param[out] str string received
@@ -120,6 +133,13 @@ public:
         @param dest destination process
     */
     void sendCheckpoint(Checkpoint *ckp, int dest);
+    
+    /** wrapper for MPI_Isend an entire Checkpoint object
+        @param ckp Checkpoint object to send
+        @param dest destination process
+        @param req  bject that specify request
+    */
+    void asyncSendCheckpoint(Checkpoint *ckp, int dest, MPI_Request *req = NULL);
 
     /** wrapper for MPI_Recv an entire Checkpoint object
         @param[out] ckp Checkpoint object received

@@ -4444,7 +4444,8 @@ void IQTree::syncCurrentTree() {
             candidateset_changed[worker] = false;
             MPIHelper::getInstance().increaseTreeSent(Params::getInstance().popSize);
         }
-        MPIHelper::getInstance().sendCheckpoint(checkpoint, worker);
+        MPIHelper::getInstance().asyncSendCheckpoint(checkpoint, worker);
+        // MPIHelper::getInstance().sendCheckpoint(checkpoint, worker);
     } else {
         // worker: always send tree to MASTER
         tree = getTreeString();
@@ -4454,7 +4455,8 @@ void IQTree::syncCurrentTree() {
         if (boot_samples.size() > 0) {
             saveUFBoot(checkpoint);
         }
-        MPIHelper::getInstance().sendCheckpoint(checkpoint, PROC_MASTER);
+        MPIHelper::getInstance().asyncSendCheckpoint(checkpoint, PROC_MASTER);
+        // MPIHelper::getInstance().sendCheckpoint(checkpoint, PROC_MASTER);
         MPIHelper::getInstance().increaseTreeSent();
 
         // now receive the candidate set
