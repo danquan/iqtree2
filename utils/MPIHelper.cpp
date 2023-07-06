@@ -116,7 +116,9 @@ void MPIHelper::sendCheckpoint(Checkpoint *ckp, int dest) {
 
 void MPIHelper::asyncSendString(string &str, int dest, int tag, MPI_Request *req) {
     char *buf = (char*)str.c_str();
+    // printf("ASYNC NHA BRO\n");
     MPI_Isend(buf, str.length()+1, MPI_CHAR, dest, tag, MPI_COMM_WORLD, req);
+    MPI_Wait(req, MPI_STATUS_IGNORE);
 }
 
 void MPIHelper::asyncSendCheckpoint(Checkpoint *ckp, int dest, MPI_Request *req) {
