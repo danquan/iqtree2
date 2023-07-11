@@ -120,11 +120,29 @@ public:
     void saveUFBoot(Checkpoint *checkpoint);
 
     /**
-
         restore UFBoot_trees from sample_start to sample_end (MPI)
         @param checkpoint Checkpoint object
     */
     void restoreUFBoot(Checkpoint *checkpoint);
+
+    /**
+        save boot_orig_logl. 
+        Just for syncing between workers and master
+        @param checkpoint Checkpoint object
+    */
+    void saveBootOrigLogl(Checkpoint *checkpoint);
+
+    /**
+        save boot_orig_logl. 
+        Just for syncing between workers and master
+        @param checkpoint Checkpoint object
+    */
+    void restoreBootOrigLogl(Checkpoint *checkpoint);
+    
+    /**
+        sync bootstrap trees between workers and master
+    */
+    void syncBootTrees();
 
     /**
      * setup all necessary parameters  (declared as virtual needed for phylosupertree)

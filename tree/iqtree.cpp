@@ -2419,6 +2419,10 @@ double IQTree::doTreeSearch() {
 
     if (!early_stop)
         sendStopMessage();
+    
+    // Quan: We need to sync Bootstrap Trees
+    if(params->gbo_replicates > 0)
+        syncBootTrees();
 
     readTreeString(candidateTrees.getBestTreeStrings()[0]);
 
@@ -4429,8 +4433,13 @@ void IQTree::syncCurrentTree() {
                     candidateset_changed[w] = true;
         }
 
-        if (boot_samples.size() > 0) {
-            restoreUFBoot(checkpoint);
+        // Quan: Now, we don't sync bootstrap tree in main loop
+        // if (boot_samples.size() > 0) {
+        //     restoreUFBoot(checkpoint);
+        // }
+        // Quan: Instead, just sync boot_orig_logl to keep logl_cutoff true
+        if (boot_orig_logl.size() > 0) {
+            restoreBootOrigLogl(checkpoint);
         }
 
         // send candidate trees to worker
@@ -4444,19 +4453,24 @@ void IQTree::syncCurrentTree() {
             candidateset_changed[worker] = false;
             MPIHelper::getInstance().increaseTreeSent(Params::getInstance().popSize);
         }
-        MPIHelper::getInstance().asyncSendCheckpoint(checkpoint, worker);
-        // MPIHelper::getInstance().sendCheckpoint(checkpoint, worker);
+        MPIHelper::getInstance().sendCheckpoint(checkpoint, worker);
     } else {
         // worker: always send tree to MASTER
         tree = getTreeString();
         score = curScore;
         CKP_SAVE(tree);
         CKP_SAVE(score);
-        if (boot_samples.size() > 0) {
-            saveUFBoot(checkpoint);
-        }
-        MPIHelper::getInstance().asyncSendCheckpoint(checkpoint, PROC_MASTER);
-        // MPIHelper::getInstance().sendCheckpoint(checkpoint, PROC_MASTER);
+
+        // Quan: Now, we don't sync bootstrap tree in main loop
+        // if (boot_samples.size() > 0) {
+        //     saveUFBoot(checkpoint);
+        // }
+        // Quan: Instead, just sync boot_orig_logl to keep logl_cutoff true
+        if (boot_orig_logl.size() > 0) {
+            saveBootOrigLogl(checkpoint);
+        } 
+
+        MPIHelper::getInstance().sendCheckpoint(checkpoint, PROC_MASTER);
         MPIHelper::getInstance().increaseTreeSent();
 
         // now receive the candidate set
@@ -4640,5 +4654,84 @@ int PhyloTree::testNumThreads() {
     setNumThreads(bestProc+1);
 
     return bestProc+1;
+#endif
+}
+
+void IQTree::saveBootOrigLogl(Checkpoint *checkpoint) 
+{
+    checkpoint->startStruct("BootOrigLogl");
+
+    // Just Workers need it
+    assert(MPIHelper::getInstance().isWorker());
+
+    CKP_SAVE(sample_start);
+    CKP_SAVE(sample_end);
+
+    checkpoint->startList(boot_orig_logl.size());
+    checkpoint->setListElement(sample_start-1);
+
+    for(int id = sample_start; id < sample_end; ++id)
+    {
+        checkpoint->addListElement();
+        stringstream ss;
+        ss.precision(10);
+        ss << boot_orig_logl[id];
+        checkpoint->put("", ss.str());
+    }
+    checkpoint->endList();
+    checkpoint->endStruct();
+}
+
+void IQTree::restoreBootOrigLogl(Checkpoint *checkpoint) 
+{
+    checkpoint->startStruct("BootOrigLogl");
+
+    // Just Master needs it
+    assert(MPIHelper::getInstance().isMaster());
+
+    CKP_RESTORE(sample_start);
+    CKP_RESTORE(sample_end);
+
+    checkpoint->startList(boot_orig_logl.size());
+    checkpoint->setListElement(sample_start-1);
+
+    for(int id = sample_start; id < sample_end; ++id)
+    {
+        checkpoint->addListElement();
+
+        string str;
+        checkpoint->getString("", str);
+        ASSERT(!str.empty());
+        stringstream ss(str);
+
+        ss >> boot_orig_logl[id];
+    }
+    checkpoint->endList();
+    checkpoint->endStruct();
+}
+
+void IQTree::syncBootTrees() 
+{
+    if (MPIHelper::getInstance().getNumProcesses() == 1)
+        return;
+
+#ifdef _IQTREE_MPI
+
+    Checkpoint *checkpoint = new Checkpoint;
+
+    if(MPIHelper::getInstance().isMaster()) {
+        // Master have to wait all workers' message
+        for(int id = 1; id < MPIHelper::getInstance().getNumProcesses(); ++id) {
+            MPIHelper::getInstance().recvCheckpoint(checkpoint);
+            restoreUFBoot(checkpoint);
+        }
+    }
+    else {
+        saveUFBoot(checkpoint);
+        MPIHelper::getInstance().sendCheckpoint(checkpoint, PROC_MASTER);
+    }
+
+    delete checkpoint;
+
 #endif
 }
