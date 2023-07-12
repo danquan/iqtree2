@@ -2294,6 +2294,8 @@ double IQTree::doTreeSearch() {
         if (!boot_orig_logl.empty())
             logl_cutoff = *min_element(boot_orig_logl.begin(), boot_orig_logl.end());
 
+        // printf("Process %d: logl_cutoff is %f\n", MPIHelper::getInstance().getProcessID(), logl_cutoff);
+
         if (estimate_nni_cutoff && nni_info.size() >= 500) {
             estimate_nni_cutoff = false;
             estimateNNICutoff(params);
@@ -3551,6 +3553,7 @@ void IQTree::estimateNNICutoff(Params* params) {
 }
 
 void IQTree::saveCurrentTree(double cur_logl) {
+    // printf("In saveCurrentTree: Process %d: logl_cutoff is %f\n", MPIHelper::getInstance().getProcessID(), logl_cutoff);
 
     if (logl_cutoff != 0.0 && cur_logl < logl_cutoff - 1.0)
         return;
