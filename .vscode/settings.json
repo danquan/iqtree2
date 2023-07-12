@@ -4,5 +4,6 @@
         "sstream": "cpp",
         "regex": "cpp",
         "*.tcc": "cpp"
-    }
+    },
+    "C_Cpp.dimInactiveRegions": false
 }
