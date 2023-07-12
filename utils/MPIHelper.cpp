@@ -101,10 +101,20 @@ bool MPIHelper::gotMessage() {
 
 
 #ifdef _IQTREE_MPI
+
+int MPIHelper::sizeOf(MPI_Datatype thisType) {
+    int size;
+    MPI_Type_size(thisType, &size);
+    return size;
+}
+
 void MPIHelper::sendString(string &str, int dest, int tag) {
     char *buf = (char*)str.c_str();
     // printf("IT'S RUNNING HERE\n"); // It's running here ><
     MPI_Send(buf, str.length()+1, MPI_CHAR, dest, tag, MPI_COMM_WORLD);
+    
+    // increase storage send
+    this->szDataSend += sizeOf(MPI_CHAR) * (str.length() + 1);
 }
 
 void MPIHelper::sendCheckpoint(Checkpoint *ckp, int dest) {
@@ -112,6 +122,7 @@ void MPIHelper::sendCheckpoint(Checkpoint *ckp, int dest) {
     ckp->dump(ss);
     string str = ss.str();
     sendString(str, dest, TREE_TAG);
+    
 }
 
 void MPIHelper::asyncSendString(string &str, int dest, int tag, MPI_Request *req) {
@@ -120,6 +131,9 @@ void MPIHelper::asyncSendString(string &str, int dest, int tag, MPI_Request *req
     
     MPI_Isend(buf, str.length()+1, MPI_CHAR, dest, tag, MPI_COMM_WORLD, req);
     MPI_Wait(req, MPI_STATUS_IGNORE);
+
+    // increase storage send
+    this->szDataSend += sizeOf(MPI_CHAR) * (str.length() + 1);
 }
 
 void MPIHelper::asyncSendCheckpoint(Checkpoint *ckp, int dest, MPI_Request *req) {
@@ -141,6 +155,10 @@ int MPIHelper::recvString(string &str, int src, int tag) {
     char *recvBuffer = new char[msgCount];
     MPI_Recv(recvBuffer, msgCount, MPI_CHAR, status.MPI_SOURCE, status.MPI_TAG, MPI_COMM_WORLD, &status);
     str = recvBuffer;
+
+    // increase storage receive
+    this->szDataRecv += msgCount * sizeOf(MPI_CHAR);
+
     delete [] recvBuffer;
     return status.MPI_SOURCE;
 }
@@ -166,12 +184,23 @@ void MPIHelper::broadcastCheckpoint(Checkpoint *ckp) {
     // broadcast the count for workers
     MPI_Bcast(&msgCount, 1, MPI_INT, PROC_MASTER, MPI_COMM_WORLD);
 
+    
+    if(isMaster())// storage for master to send msgCount
+        this->szDataSend += sizeOf(MPI_INT) * (getNumProcesses() - 1); 
+    else // storage for worker to receive msgCounts
+        this->szDataRecv += sizeOf(MPI_INT) * 1; 
+
     char *recvBuffer = new char[msgCount];
     if (isMaster())
         memcpy(recvBuffer, str.c_str(), msgCount);
 
     // broadcast trees to workers
     MPI_Bcast(recvBuffer, msgCount, MPI_CHAR, PROC_MASTER, MPI_COMM_WORLD);
+
+    if(isMaster())// storage for master to send recvBuffer
+        this->szDataSend += sizeOf(MPI_INT) * (msgCount) * (getNumProcesses() - 1); 
+    else // storage for worker to receive recvBuffer
+        this->szDataRecv += sizeOf(MPI_INT) * (msgCount); 
 
     if (isWorker()) {
         ss.clear();
@@ -198,6 +227,9 @@ void MPIHelper::gatherCheckpoint(Checkpoint *ckp) {
     }
     MPI_Gather(&msgCount, 1, MPI_INT, msgCounts, 1, MPI_INT, PROC_MASTER, MPI_COMM_WORLD);
 
+    this->szDataSend += sizeOf(MPI_INT) * 1; // storage for sending msgCount
+    this->szDataRecv += sizeOf(MPI_INT) * 1; // storage for receiving msgCounts
+
     // now real contents to MASTER
     if (isMaster()) {
         for (int i = 0; i < getNumProcesses(); i++) {
@@ -209,6 +241,10 @@ void MPIHelper::gatherCheckpoint(Checkpoint *ckp) {
     }
     char *buf = (char*)str.c_str();
     MPI_Gatherv(buf, msgCount, MPI_CHAR, recvBuffer, msgCounts, displ, MPI_CHAR, PROC_MASTER, MPI_COMM_WORLD);
+
+    
+    this->szDataSend += sizeOf(MPI_CHAR) * msgCount; // storage for sending buf
+    this->szDataRecv += sizeOf(MPI_CHAR) * (*msgCounts); // storage for receiving recvBuffer
 
     if (isMaster()) {
         // now decode the buffer
