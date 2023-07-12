@@ -204,8 +204,19 @@ public:
 
 private:
     int numNNISearch;
+    int szDataRecv;
+    int szDataSend;
 
-
+public:
+#ifdef _IQTREE_MPI
+    int sizeOf(MPI_Datatype thisType);
+#endif
+    int getSizeDataRecv() {
+        return szDataRecv;
+    }
+    int getSizeDataSend() {
+        return szDataSend;
+    }
 };
 
 #endif
