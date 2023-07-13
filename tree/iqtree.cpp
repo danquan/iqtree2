@@ -4497,7 +4497,7 @@ void IQTree::syncCurrentTree() {
             saveBootOrigLogl(checkpoint);
         } 
 
-        MPIHelper::getInstance().asyncSendCheckpoint(checkpoint, PROC_MASTER);
+        MPIHelper::getInstance().sendCheckpoint(checkpoint, PROC_MASTER);
         MPIHelper::getInstance().increaseTreeSent(cset.size());
 
         // now receive the candidate set
