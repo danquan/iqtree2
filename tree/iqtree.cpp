@@ -4489,7 +4489,7 @@ void IQTree::syncCurrentTree() {
         CandidateSet cset = candidateTrees.getBestCandidateTrees(Params::getInstance().popSize);
         cset.setCheckpoint(checkpoint);
         cset.saveCheckpoint();
-        MPIHelper::getInstance().increaseTreeSent(Params::getInstance().popSize);
+        // MPIHelper::getInstance().increaseTreeSent(Params::getInstance().popSize);
 
         // Quan: Now, we don't sync bootstrap tree in main loop
         // if (boot_samples.size() > 0) {
