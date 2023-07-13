@@ -2444,11 +2444,14 @@ double IQTree::doTreeSearch() {
     cout << "Total number of trees received: " << MPIHelper::getInstance().getNumTreeReceived() << endl;
     cout << "Total number of trees sent: " << MPIHelper::getInstance().getNumTreeSent() << endl;
     cout << "Total number of NNI searches done by myself: " << MPIHelper::getInstance().getNumNNISearch() << endl;
-    /*cout << "Total size of sended messages (bytes): " << MPIHelper::getInstance().getSizeDataSend() << endl;
-    cout << "Total size of received messages (bytes): " << MPIHelper::getInstance().getSizeDataRecv() << endl;*/
+    cout << "Total size of sended messages (bytes): " << MPIHelper::getInstance().getSizeDataSend() << endl;
+    cout << "Total size of received messages (bytes): " << MPIHelper::getInstance().getSizeDataRecv() << endl;
 
-    printf("Total size of sended messages in processor %d (bytes): %d\n", MPIHelper::getInstance().getProcessID(), MPIHelper::getInstance().getSizeDataSend());
-    printf("Total size of received messages in processor %d (bytes): %d\n", MPIHelper::getInstance().getProcessID(), MPIHelper::getInstance().getSizeDataRecv());
+    if(MPIHelper::getInstance().getProcessID() != PROC_MASTER) {
+        printf("Total size of sended messages in processor %d (bytes): %d\n", MPIHelper::getInstance().getProcessID(), MPIHelper::getInstance().getSizeDataSend());
+        printf("Total size of received messages in processor %d (bytes): %d\n", MPIHelper::getInstance().getProcessID(), MPIHelper::getInstance().getSizeDataRecv());
+    }
+    
     MPIHelper::getInstance().resetNumbers();
 #endif
 
