@@ -2444,8 +2444,11 @@ double IQTree::doTreeSearch() {
     cout << "Total number of trees received: " << MPIHelper::getInstance().getNumTreeReceived() << endl;
     cout << "Total number of trees sent: " << MPIHelper::getInstance().getNumTreeSent() << endl;
     cout << "Total number of NNI searches done by myself: " << MPIHelper::getInstance().getNumNNISearch() << endl;
-    cout << "Total size of sended messages (bytes): " << MPIHelper::getInstance().getSizeDataSend() << endl;
-    cout << "Total size of received messages (bytes): " << MPIHelper::getInstance().getSizeDataRecv() << endl;
+    /*cout << "Total size of sended messages (bytes): " << MPIHelper::getInstance().getSizeDataSend() << endl;
+    cout << "Total size of received messages (bytes): " << MPIHelper::getInstance().getSizeDataRecv() << endl;*/
+
+    printf("Total size of sended messages in processor %d (bytes): %d\n", MPIHelper::getInstance().getProcessID(), MPIHelper::getInstance().getSizeDataSend());
+    printf("Total size of received messages in processor %d (bytes): %d\n", MPIHelper::getInstance().getProcessID(), MPIHelper::getInstance().getSizeDataRecv());
     MPIHelper::getInstance().resetNumbers();
 #endif
 
@@ -4424,11 +4427,25 @@ void IQTree::syncCurrentTree() {
     if (MPIHelper::getInstance().isMaster()) {
         // master: receive tree from WORKERS
         int worker = MPIHelper::getInstance().recvCheckpoint(checkpoint);
-        MPIHelper::getInstance().increaseTreeReceived();
+
+        /*MPIHelper::getInstance().increaseTreeReceived();
         CKP_RESTORE(tree);
         CKP_RESTORE(score);
-        int pos = addTreeToCandidateSet(tree, score, true, worker);
-        if (pos >= 0 && pos < params->popSize) {
+        int pos = addTreeToCandidateSet(tree, score, true, worker);*/
+
+        CandidateSet cset;
+        cset.setCheckpoint(checkpoint);
+        cset.restoreCheckpoint();
+
+        bool is_candidateset_changed = false;
+        for (CandidateSet::iterator it = cset.begin(); it != cset.end(); it++) {
+            int pos = addTreeToCandidateSet(it->second.tree, it->second.score, false, worker);
+            if (pos >= 0 && pos < params->popSize) is_candidateset_changed = true;
+        }
+
+        MPIHelper::getInstance().increaseTreeReceived(cset.size());
+
+        if /*(pos >= 0 && pos < params->popSize)*/ (is_candidateset_changed == true) {
             // candidate set is changed, update for other workers
             for (int w = 0; w < candidateset_changed.size(); w++)
                 if (w != worker)
@@ -4457,11 +4474,19 @@ void IQTree::syncCurrentTree() {
         }
         MPIHelper::getInstance().sendCheckpoint(checkpoint, worker);
     } else {
+        /*
         // worker: always send tree to MASTER
         tree = getTreeString();
         score = curScore;
         CKP_SAVE(tree);
         CKP_SAVE(score);
+        */
+
+        // worker: Now, we send popsize(5) trees instead of 1 tree to MASTER
+        CandidateSet cset = candidateTrees.getBestCandidateTrees(Params::getInstance().popSize);
+        cset.setCheckpoint(checkpoint);
+        cset.saveCheckpoint();
+        MPIHelper::getInstance().increaseTreeSent(Params::getInstance().popSize);
 
         // Quan: Now, we don't sync bootstrap tree in main loop
         // if (boot_samples.size() > 0) {
@@ -4472,8 +4497,8 @@ void IQTree::syncCurrentTree() {
             saveBootOrigLogl(checkpoint);
         } 
 
-        MPIHelper::getInstance().sendCheckpoint(checkpoint, PROC_MASTER);
-        MPIHelper::getInstance().increaseTreeSent();
+        MPIHelper::getInstance().asyncSendCheckpoint(checkpoint, PROC_MASTER);
+        MPIHelper::getInstance().increaseTreeSent(cset.size());
 
         // now receive the candidate set
         MPIHelper::getInstance().recvCheckpoint(checkpoint, PROC_MASTER);
@@ -4520,10 +4545,20 @@ void IQTree::sendStopMessage() {
 //            int worker = MPIHelper::getInstance().recvString(buf);
             checkpoint->clear();
             int worker = MPIHelper::getInstance().recvCheckpoint(checkpoint);
-            MPIHelper::getInstance().increaseTreeReceived();
+            
+            /*MPIHelper::getInstance().increaseTreeReceived();
             CKP_RESTORE(tree);
             CKP_RESTORE(score);
-            addTreeToCandidateSet(tree, score, true, worker);
+            addTreeToCandidateSet(tree, score, true, worker);*/
+
+            CandidateSet cset;
+            cset.setCheckpoint(checkpoint);
+            cset.restoreCheckpoint();
+            for (CandidateSet::iterator it = cset.begin(); it != cset.end(); it++)
+                addTreeToCandidateSet(it->second.tree, it->second.score, false, worker);
+
+            MPIHelper::getInstance().increaseTreeReceived(cset.size());
+
             MPIHelper::getInstance().sendString(str, worker, TREE_TAG);
         }
     }
