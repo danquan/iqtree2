@@ -4442,7 +4442,7 @@ void IQTree::syncCurrentTree() {
 
         bool is_candidateset_changed = false;
         for (CandidateSet::iterator it = cset.begin(); it != cset.end(); it++) {
-            int pos = addTreeToCandidateSet(it->second.tree, it->second.score, false, worker);
+            int pos = addTreeToCandidateSet(it->second.tree, it->second.score, true, worker);
             if (pos >= 0 && pos < params->popSize) is_candidateset_changed = true;
         }
 
