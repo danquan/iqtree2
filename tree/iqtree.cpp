@@ -2328,7 +2328,7 @@ double IQTree::doTreeSearch() {
         //     syncCurrentTree();
 
         if (MPIHelper::getInstance().isWorker()) {
-            if (loopCount % 5 == 0) {
+            if (loopCount % 3 == 0) {
                 syncCurrentTree();
             }
         } else {
