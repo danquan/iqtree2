@@ -676,7 +676,9 @@ void IQTree::computeInitialTree(LikelihoodKernel kernel, istream* in) {
 
 int IQTree::addTreeToCandidateSet(string treeString, double score, bool updateStopRule, int sourceProcID) {
     double curBestScore = candidateTrees.getBestScore();
+
     int pos = candidateTrees.update(treeString, score);
+
     if (updateStopRule) {
         stop_rule.setCurIt(stop_rule.getCurIt() + 1);
         if (score > curBestScore) {
@@ -2290,7 +2292,8 @@ double IQTree::doTreeSearch() {
     int ufboot_count, ufboot_count_check;
     stop_rule.getUFBootCountCheck(ufboot_count, ufboot_count_check);
 
-    while (!stop_rule.meetStopCondition(stop_rule.getCurIt(), cur_correlation)) {
+    // loopCount is used to detect when we sync Tree
+    for (int loopCount = 1; !stop_rule.meetStopCondition(stop_rule.getCurIt(), cur_correlation); ++loopCount) {
 
         searchinfo.curIter = stop_rule.getCurIt();
         // estimate logl_cutoff for bootstrap
@@ -2316,12 +2319,23 @@ double IQTree::doTreeSearch() {
         pair<int, int> nniInfos; // <num_NNIs, num_steps>
         nniInfos = doNNISearch();
         curTree = getTreeString();
+        curScore = computeLogL(); // reCalculate Log Likelihood
         int pos = addTreeToCandidateSet(curTree, curScore, true, MPIHelper::getInstance().getProcessID());
         if (pos != -2 && pos != -1 && (Params::getInstance().fixStableSplits || Params::getInstance().adaptPertubation))
             candidateTrees.computeSplitOccurences(Params::getInstance().stableSplitThreshold);
 
-        if (MPIHelper::getInstance().isWorker() || MPIHelper::getInstance().gotMessage())
-            syncCurrentTree();
+        // if (MPIHelper::getInstance().isWorker() || MPIHelper::getInstance().gotMessage())
+        //     syncCurrentTree();
+
+        if (MPIHelper::getInstance().isWorker()) {
+            if (loopCount % 5 == 0) {
+                syncCurrentTree();
+            }
+        } else {
+            while(MPIHelper::getInstance().gotMessage()) {
+                syncCurrentTree();
+            }
+        }
 
 
         // TODO: cannot check yet, need to somehow return treechanged
@@ -3448,10 +3462,11 @@ void IQTree::evaluateNNIs(Branches &nniBranches, vector<NNIMove>  &positiveNNIs)
         }
 
         // synchronize tree during optimization step
-        if (MPIHelper::getInstance().isMaster() && candidateset_changed.size() > 0
-            && MPIHelper::getInstance().gotMessage()) {
-            syncCurrentTree();
-        }
+        // don't use this and send trees from candidates set
+        // if (MPIHelper::getInstance().isMaster() && candidateset_changed.size() > 0
+        //     && MPIHelper::getInstance().gotMessage()) {
+        //     syncCurrentTree();
+        // }
     }
 }
 
@@ -4493,7 +4508,6 @@ void IQTree::syncCurrentTree() {
         cset.setCheckpoint(checkpoint);
         cset.saveCheckpoint();
         MPIHelper::getInstance().increaseTreeSent(cset.size());
-        // MPIHelper::getInstance().increaseTreeSent(Params::getInstance().popSize);
 
         // Quan: Now, we don't sync bootstrap tree in main loop
         // if (boot_samples.size() > 0) {
