@@ -2890,7 +2890,9 @@ void runTreeReconstruction(Params &params, IQTree* &iqtree) {
         ((PhyloSuperTree*) iqtree)->printBestPartitionParams((string(params.out_prefix) + ".best_model.nex").c_str());
     }
 
-    cout << "BEST SCORE FOUND : " << iqtree->getCurScore() << endl;
+    // Quan: For MPI, we can't make sure that current Tree is the best
+    // cout << "BEST SCORE FOUND : " << iqtree->getCurScore() << endl;
+    cout << "BEST SCORE FOUND : " << iqtree->getBestScore() << endl;
 
     if (params.write_candidate_trees) {
         printTrees(iqtree->getBestTrees(), params, ".imd_trees");
