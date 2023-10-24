@@ -702,6 +702,8 @@ public:
      */
     int addTreeToCandidateSet(string treeString, double score, bool updateStopRule, int sourceProcID);
 
+    int addTreeToCandidateSet(string treeString, double score, bool updateStopRule, int sourceProcID, string& revTree, double& revScore);
+
     /**
         MPI: synchronize candidate trees between all processes
         @param nTrees number of trees to broadcast
@@ -715,7 +717,11 @@ public:
         @param curTree current tree
 
     */
-    void syncCurrentTree();
+    void syncCurrentTree(bool send);
+
+    void sendCurrentTree(string tree, double score, vector<int> avail, bool improved);
+
+    void receiveCurrentTree();
 
     /**
         MPI: Master sends stop message to all workers
@@ -1005,7 +1011,9 @@ protected:
     double doTreePerturbation();
 
     void estimateLoglCutoffBS();
-    
+
+    void sendImprovedMessage();
+
     //void estimateNNICutoff(Params &params);
 
 public:

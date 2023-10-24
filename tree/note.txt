@@ -1,0 +1,38 @@
+// IQTree2
+cmake -DCMAKE_C_COMPILER=mpicc -DCMAKE_CXX_COMPILER=mpicxx ..
+
+Bản không mpi:
+    + cd <thư mục build>
+    + ./iqtree2-mpi -s ../example/example.phy -redo -B 1000
+Bản có MPI:
+    + cd <thư mục build>
+    + mpirun -np 2 --allow-run-as-root ./iqtree2-mpi -m GTR -s ../example/example.phy -redo -B 1000
+
+
+// 
+
+- PhyloTree: 1 cây
+- IQTree kế thừa từ PhyloTree -> là cây hiện tại đang xét (curTree)
+- CandidateSet của IQTree lưu lại 20 cây tối nhất, mỗi process có 1 tập riêng
+- curBestScore: điểm cao nhất của các cây trong tập CandidateSet của từng process
+
+initCandidateTreeSet:
+    - Mỗi worker sinh 100 / numProcesses cây random.
+    - Tính logl 
+    -> chuyển qua worker -> lấy 5 cây tốt nhất lưu tại bestInitTrees
+    
+- OPTIMIZING CANDIDATE TREE SET  
+    while (chưa dừng):
+        doTreePerturbation: chọn 1 cây random làm curTree và xáo trộn random
+        doNNISearch: leo đồi curTree
+        addTreeToCandidateSet
+        syncCurrentTree(): gửi cây hiện tại (curTree) cho master nếu là worker
+            - candidateset_changed: master có nên gửi cây cho các worker?
+            nếu ok, lấy cây tốt nhất trong candidateTrees gửi         
+
+- candidateTrees: 
+    + khởi tạo trong initCandidateTreeSet
+        
+
+
+    60698
