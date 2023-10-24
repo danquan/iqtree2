@@ -4401,6 +4401,76 @@ vector<string> IQTree::getBestTrees(int numTrees) {
 *******************************************/
 
 
+void IQTree::syncCandidateTrees(int nTrees, bool updateStopRule) {
+    if (MPIHelper::getInstance().getNumProcesses() == 1)
+        return;
+
+#ifdef _IQTREE_MPI
+    // gather trees to Master
+
+    Checkpoint *ckp = new Checkpoint;
+
+    if (MPIHelper::getInstance().isMaster()) {
+        // update candidate set at master
+        int trees = 0;
+        for (int w = 1; w < MPIHelper::getInstance().getNumProcesses(); w++) {
+            int worker = MPIHelper::getInstance().recvCheckpoint(ckp);
+            CandidateSet cset;
+            cset.setCheckpoint(ckp);
+            cset.restoreCheckpoint();
+            for (CandidateSet::iterator it = cset.begin(); it != cset.end(); it++)
+                addTreeToCandidateSet(it->second.tree, it->second.score, updateStopRule, worker);
+            trees += ckp->size();
+            ckp->clear();
+        }
+        cout << "Master: " << trees << " candidate trees gathered from workers" << endl;
+        // get the best candidate trees
+        int numTrees = max(nTrees, MPIHelper::getInstance().getNumProcesses());
+        CandidateSet bestCandidates = candidateTrees.getBestCandidateTrees(numTrees);
+        int saved_numNNITrees = params->numNNITrees;
+        params->numNNITrees = numTrees;
+        bestCandidates.setCheckpoint(ckp);
+        bestCandidates.saveCheckpoint();
+        params->numNNITrees = saved_numNNITrees;
+    } else {
+        // send candidate set to master
+        CandidateSet cset = candidateTrees.getBestCandidateTrees();
+        cset.setCheckpoint(ckp);
+        cset.saveCheckpoint();
+        MPIHelper::getInstance().sendCheckpoint(ckp, PROC_MASTER);
+        cout << "Worker " << MPIHelper::getInstance().getProcessID() << ": " << ckp->size() << " candidate trees sent to master" << endl;
+        ckp->clear();
+    }
+
+    if (updateStopRule && stop_rule.meetStopCondition(stop_rule.getCurIt(), 0.0)) {
+        // 2020-04-30: send stop signal
+        ckp->putBool("stop", true);
+    }
+    
+    // broadcast candidate trees from master to worker
+    MPIHelper::getInstance().broadcastCheckpoint(ckp);
+    cout << ckp->size() << " trees broadcasted to workers" << endl;
+
+    if (MPIHelper::getInstance().isWorker()) {
+        // update candidate set at worker
+        CandidateSet cset;
+        cset.setCheckpoint(ckp);
+        cset.restoreCheckpoint();
+        for (CandidateSet::iterator it = cset.begin(); it != cset.end(); it++)
+            addTreeToCandidateSet(it->second.tree, it->second.score, false, PROC_MASTER);
+        
+        // 2020-04-40: check stop signal
+        if (ckp->getBool("stop")) {
+            cout << "Worker " << MPIHelper::getInstance().getProcessID() << " gets STOP message!" << endl;
+            stop_rule.shouldStop();
+        }
+    }
+
+    delete ckp;
+#endif
+}
+
+
 void IQTree::syncCurrentTree() {
     if (MPIHelper::getInstance().getNumProcesses() == 1)
         return;
@@ -4484,18 +4554,15 @@ void IQTree::sendCurrentTree(string tree, double score, vector<int> avail, bool 
         return;
     }
     Checkpoint *checkpoint = new Checkpoint;
-    
-    int worker = avail[rand() % avail.size()];
-    vector<int> newAvail;
-    for (int i = 0; i < avail.size(); ++i)
-        if (avail[i] != worker)
-            newAvail.push_back(avail[i]);
+    int randomIndex = rand() % avail.size();
+    int worker = avail[randomIndex];
+    avail.erase(avail.begin() + randomIndex);
     
     CandidateSet cset;
-    CKP_VECTOR_SAVE(newAvail);
+    CKP_VECTOR_SAVE(avail);
     
     checkpoint->putBool("improved", improved);
-    cset.update(revTree, revScore);
+    cset.update(tree, score);
     cset.setCheckpoint(checkpoint);
     cset.saveCheckpoint();
     MPIHelper::getInstance().increaseTreeSent(1);
@@ -4532,7 +4599,8 @@ void IQTree::receiveCurrentTree() {
     cset.setCheckpoint(checkpoint);
     cset.restoreCheckpoint();
     MPIHelper::getInstance().increaseTreeReceived(cset.size());
-    vector<bool> avail = CKP_VECTOR_RESTORE();
+    vector<int> avail;
+    CKP_VECTOR_RESTORE(avail);
     
     string revTree;
     double revScore;

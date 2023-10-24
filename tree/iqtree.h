@@ -717,7 +717,8 @@ public:
         @param curTree current tree
 
     */
-    void syncCurrentTree(bool send);
+
+    void syncCurrentTree();
 
     void sendCurrentTree(string tree, double score, vector<int> avail, bool improved);
 
