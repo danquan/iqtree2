@@ -701,7 +701,7 @@ int IQTree::addTreeToCandidateSet(string treeString, double score, bool updateSt
 
 int IQTree::addTreeToCandidateSet(string treeString, double score, bool updateStopRule, int sourceProcID, string& revString, double& revScore) {
     double curBestScore = candidateTrees.getBestScore();
-
+    updateStopRule = false;
     int pos = candidateTrees.update(treeString, score, revString, revScore);
     if (pos == -2) {
         revString = treeString;
@@ -865,7 +865,7 @@ void IQTree::initCandidateTreeSet(int nParTrees, int nNNITrees) {
 
     //---- BLOCKING COMMUNICATION
     syncCandidateTrees(nNNITrees, false);
-
+    MPI_Barrier(MPI_COMM_WORLD);
 
     vector<string> bestInitTrees; // Set of best initial trees for doing NNIs
 
@@ -911,7 +911,7 @@ void IQTree::initCandidateTreeSet(int nParTrees, int nNNITrees) {
 
     //---- BLOCKING COMMUNICATION
     syncCandidateTrees(Params::getInstance().numSupportTrees, true);
-
+    MPI_Barrier(MPI_COMM_WORLD);
 }
 
 string IQTree::generateParsimonyTree(int randomSeed) {
@@ -2228,6 +2228,7 @@ string IQTree::optimizeBranches(int maxTraversal) {
 
 void IQTree::sendImprovedMessage() {
     if (MPIHelper::getInstance().isMaster()) {
+        cout << stop_rule.getCurIt() << " improved\n";
         stop_rule.addImprovedIteration(stop_rule.getCurIt()); 
     } else {
         Checkpoint *checkpoint = new Checkpoint;
@@ -2357,16 +2358,14 @@ double IQTree::doTreeSearch() {
         }
 
         if (revTree.size()) {
-            curTree = revTree;
-            curScore = revScore;
             vector<int> avail;
             for (int i = 0; i < MPIHelper::getInstance().getNumProcesses(); ++i) 
                 if (i != MPIHelper::getInstance().getProcessID()) 
                     avail.push_back(i);
-            sendCurrentTree(curTree, curScore, avail, (pos != -1)); 
-        } else {
-
+            printf("Special: %d\n", pos);
+            sendCurrentTree(revTree, revScore, avail, (pos != -1)); 
         }
+        printf("Best score found in this process: %f\n", getBestScore());
 
         receiveCurrentTree();
 
@@ -4439,9 +4438,10 @@ void IQTree::syncCandidateTrees(int nTrees, bool updateStopRule) {
         cset.saveCheckpoint();
         MPIHelper::getInstance().sendCheckpoint(ckp, PROC_MASTER);
         cout << "Worker " << MPIHelper::getInstance().getProcessID() << ": " << ckp->size() << " candidate trees sent to master" << endl;
+        printf("Worker: %d candidate trees sent to master\n", ckp->size());
+        
         ckp->clear();
     }
-
     if (updateStopRule && stop_rule.meetStopCondition(stop_rule.getCurIt(), 0.0)) {
         // 2020-04-30: send stop signal
         ckp->putBool("stop", true);
@@ -4465,7 +4465,7 @@ void IQTree::syncCandidateTrees(int nTrees, bool updateStopRule) {
             stop_rule.shouldStop();
         }
     }
-
+    
     delete ckp;
 #endif
 }
@@ -4548,23 +4548,36 @@ void IQTree::syncCurrentTree() {
 void IQTree::sendCurrentTree(string tree, double score, vector<int> avail, bool improved) {
     if (MPIHelper::getInstance().getNumProcesses() == 1)
         return;
+    
 #ifdef _IQTREE_MPI
     //------ BLOCKING COMMUNICATION ------//
     if (avail.empty() || tree.empty()) {
         return;
     }
+
     Checkpoint *checkpoint = new Checkpoint;
     int randomIndex = rand() % avail.size();
     int worker = avail[randomIndex];
     avail.erase(avail.begin() + randomIndex);
     
     CandidateSet cset;
-    CKP_VECTOR_SAVE(avail);
-    
+
+    checkpoint->putVector("availableProcesses", avail);
     checkpoint->putBool("improved", improved);
     cset.update(tree, score);
     cset.setCheckpoint(checkpoint);
     cset.saveCheckpoint();
+    assert(cset.size() == 1);
+    
+    printf("-----------------------------------------------------------------------\n");
+    printf("%d send to %d\n", MPIHelper::getInstance().getProcessID(), worker);
+    if (checkpoint->getBool("stop")) {
+        printf("%d receive stop message\n", MPIHelper::getInstance().getProcessID());
+    }
+    printf("Available processes remaining:\n");
+    for (int i: avail) printf("%d ", i);
+    printf("-----------------------------------------------------------------------\n");
+
     MPIHelper::getInstance().increaseTreeSent(1);
     MPIHelper::getInstance().sendCheckpoint(checkpoint, worker);
     delete checkpoint;
@@ -4583,31 +4596,55 @@ void IQTree::receiveCurrentTree() {
     Checkpoint *checkpoint = new Checkpoint;
     string tree;
     double score;
-
     // receive tree from other processes
     int worker = MPIHelper::getInstance().recvCheckpoint(checkpoint);
+    
+    vector<int> avail;
+    checkpoint->getVector("availableProcesses", avail);
+    
+    printf("-----------------------------------------------------------------------\n");
+    printf("%d receive from %d\n", MPIHelper::getInstance().getProcessID(), worker);
+    
+    if (checkpoint->getBool("stop")) {
+        printf("%d receive stop message\n", MPIHelper::getInstance().getProcessID());
+    }
+    if (checkpoint->getBool("improved")) {
+        printf("%d has sent an improved message\n", MPIHelper::getInstance().getProcessID());
+    }
+    
+    if (checkpoint->getBool("improvedMessage")) {
+        printf("%d receive improved message\n", MPIHelper::getInstance().getProcessID());
+    }
+    printf("Available processes remaining:\n");
+    for (int i: avail) printf("%d ", i);
+    printf("-----------------------------------------------------------------------\n");
+
+    if (checkpoint->getBool("stop")) {
+        cout << "Worker " << MPIHelper::getInstance().getProcessID() << " gets STOP message!" << endl;
+        stop_rule.shouldStop();
+        delete checkpoint;
+        return;
+    } 
     if (checkpoint->getBool("improvedMessage")) {
         assert(MPIHelper::getInstance().isMaster());
-        stop_rule.addImprovedIteration(stop_rule.getCurIt());
+        sendImprovedMessage();
         delete checkpoint;
         return;
     }
-
+    
     bool improved = checkpoint->getBool("improved");
-
+    
     CandidateSet cset;
     cset.setCheckpoint(checkpoint);
     cset.restoreCheckpoint();
     MPIHelper::getInstance().increaseTreeReceived(cset.size());
-    vector<int> avail;
-    CKP_VECTOR_RESTORE(avail);
-    
+
     string revTree;
     double revScore;
     int pos = -2;
     for (CandidateSet::iterator it = cset.begin(); it != cset.end(); it++) {
         pos = addTreeToCandidateSet(it->second.tree, it->second.score, true, worker, revTree, revScore);
-        if (pos != -1 && pos != -2 && !improved) {
+        if (pos != -1 && pos != -2 && !improved && pos < 2) {
             sendImprovedMessage();
             improved = true;
         }
