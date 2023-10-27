@@ -865,7 +865,6 @@ void IQTree::initCandidateTreeSet(int nParTrees, int nNNITrees) {
 
     //---- BLOCKING COMMUNICATION
     syncCandidateTrees(nNNITrees, false);
-    MPI_Barrier(MPI_COMM_WORLD);
 
     vector<string> bestInitTrees; // Set of best initial trees for doing NNIs
 
@@ -911,7 +910,6 @@ void IQTree::initCandidateTreeSet(int nParTrees, int nNNITrees) {
 
     //---- BLOCKING COMMUNICATION
     syncCandidateTrees(Params::getInstance().numSupportTrees, true);
-    MPI_Barrier(MPI_COMM_WORLD);
 }
 
 string IQTree::generateParsimonyTree(int randomSeed) {
@@ -2353,7 +2351,7 @@ double IQTree::doTreeSearch() {
             revTree = "";
         }
 
-        if (pos != -2 && pos != -1) {
+        if (pos != -2 && pos != -1 && pos < 0) {
             stop_rule.addImprovedIteration(stop_rule.getCurIt());
         }
 
@@ -4467,6 +4465,7 @@ void IQTree::syncCandidateTrees(int nTrees, bool updateStopRule) {
     }
     
     delete ckp;
+    MPI_Barrier(MPI_COMM_WORLD);
 #endif
 }
 
@@ -4608,9 +4607,7 @@ void IQTree::receiveCurrentTree() {
     if (checkpoint->getBool("stop")) {
         printf("%d receive stop message\n", MPIHelper::getInstance().getProcessID());
     }
-    if (checkpoint->getBool("improved")) {
-        printf("%d has sent an improved message\n", MPIHelper::getInstance().getProcessID());
-    }
+
     
     if (checkpoint->getBool("improvedMessage")) {
         printf("%d receive improved message\n", MPIHelper::getInstance().getProcessID());
@@ -4644,7 +4641,8 @@ void IQTree::receiveCurrentTree() {
     int pos = -2;
     for (CandidateSet::iterator it = cset.begin(); it != cset.end(); it++) {
         pos = addTreeToCandidateSet(it->second.tree, it->second.score, true, worker, revTree, revScore);
-        if (pos != -1 && pos != -2 && !improved && pos < 2) {
+        if (pos != -1 && pos != -2 && !improved && pos < 0) {
+            printf("%d---\n", pos);
             sendImprovedMessage();
             improved = true;
         }
