@@ -707,23 +707,7 @@ int IQTree::addTreeToCandidateSet(string treeString, double score, bool updateSt
         revString = treeString;
         revScore = score;
     }
-    if (updateStopRule) {
-        stop_rule.setCurIt(stop_rule.getCurIt() + 1);
-        if (score > curBestScore) {
-            if (pos != -1) {
-                stop_rule.addImprovedIteration(stop_rule.getCurIt());
-                cout << "BETTER TREE FOUND at iteration " << stop_rule.getCurIt() << ": " << score << endl;
-            } else {
-                cout << "UPDATE BEST LOG-LIKELIHOOD: " << score << endl;
-            }
-            bestcandidate_changed = true;
-            // COMMENT OUT: not safe with MPI version
-        //    printResultTree();
-        }
-
-        curScore = score;
-        printIterationInfo(sourceProcID);
-    }
+    
     return pos;
 }
 
@@ -2354,7 +2338,7 @@ double IQTree::doTreeSearch() {
             revTree = "";
         }
 
-        if (pos != -2 && pos != -1 && pos < 0) {
+        if (pos != -2 && pos != -1 && pos < 3) {
             stop_rule.addImprovedIteration(stop_rule.getCurIt());
         }
 
@@ -2367,9 +2351,9 @@ double IQTree::doTreeSearch() {
             sendCurrentTree(revTree, revScore, avail, (pos != -1)); 
         }
         printf("Best score found in this process: %f\n", getBestScore());
-
+        stop_rule.setCurIt(stop_rule.getCurIt() + 1);
         receiveCurrentTree();
-
+        cout << stop_rule.getLastImprovedIteration() << ' ' << stop_rule.getCurIt() << endl;
         // TODO: cannot check yet, need to somehow return treechanged
 //        if (nni_count == 0 && params->snni && numPerturb > 0 && treechanged) {
 //            assert(0 && "BUG: NNI could not improved perturbed tree");
@@ -4549,7 +4533,6 @@ void IQTree::syncCurrentTree() {
 #endif
 }
 
-
 void IQTree::sendCurrentTree(string tree, double score, vector<int> avail, bool improved) {
     if (MPIHelper::getInstance().getNumProcesses() == 1)
         return;
@@ -4578,9 +4561,12 @@ void IQTree::sendCurrentTree(string tree, double score, vector<int> avail, bool 
     printf("%d send to %d\n", MPIHelper::getInstance().getProcessID(), worker);
     if (checkpoint->getBool("stop")) {
         printf("%d receive stop message\n", MPIHelper::getInstance().getProcessID());
+        sendCurrentTree(cset.getBestTreeStrings(1)[0], cset.getBestScore(), {0}, 1);
+        return;
     }
     printf("Available processes remaining:\n");
     for (int i: avail) printf("%d ", i);
+    printf("\n");
     printf("-----------------------------------------------------------------------\n");
 
     MPIHelper::getInstance().increaseTreeSent(1);
@@ -4647,8 +4633,7 @@ void IQTree::receiveCurrentTree() {
     int pos = -2;
     for (CandidateSet::iterator it = cset.begin(); it != cset.end(); it++) {
         pos = addTreeToCandidateSet(it->second.tree, it->second.score, true, worker, revTree, revScore);
-        if (pos != -1 && pos != -2 && !improved && pos < 0) {
-            printf("%d---\n", pos);
+        if (pos != -1 && pos != -2 && !improved && pos < 3) {
             sendImprovedMessage();
             improved = true;
         }
@@ -4667,6 +4652,7 @@ void IQTree::receiveCurrentTree() {
 
 
 void IQTree::sendStopMessage() {
+    assert(0);
     if (MPIHelper::getInstance().getNumProcesses() == 1)
         return;
 #ifdef _IQTREE_MPI

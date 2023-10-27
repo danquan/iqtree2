@@ -16,7 +16,8 @@
         "string_view": "cpp",
         "initializer_list": "cpp",
         "bitset": "cpp",
-        "utility": "cpp"
+        "utility": "cpp",
+        "iostream": "cpp"
     },
     "C_Cpp.dimInactiveRegions": false
 }
