@@ -908,6 +908,9 @@ void IQTree::initCandidateTreeSet(int nParTrees, int nNNITrees) {
         cout << getRealTime() - startTime << " seconds" << endl;
     }
 
+    MPI_Barrier(MPI_COMM_WORLD);
+
+    printf("Process %d RUNNING HERE\n", MPIHelper::getInstance().getProcessID());
     //---- BLOCKING COMMUNICATION
     syncCandidateTrees(Params::getInstance().numSupportTrees, true);
 }
@@ -4440,6 +4443,9 @@ void IQTree::syncCandidateTrees(int nTrees, bool updateStopRule) {
         
         ckp->clear();
     }
+
+    MPI_Barrier(MPI_COMM_WORLD);
+
     if (updateStopRule && stop_rule.meetStopCondition(stop_rule.getCurIt(), 0.0)) {
         // 2020-04-30: send stop signal
         ckp->putBool("stop", true);
