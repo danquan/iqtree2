@@ -237,6 +237,24 @@ public:
     int getSizeDataSend() {
         return szDataSend;
     }
+
+public:
+#ifdef _IQTREE_MPI
+
+    /**
+     * MPI: Peer-to-peer model
+    */
+    void increaseStopPeer() {
+        ++numStoppedPeer;
+    }
+
+    int getNumStopPeer() {
+        return numStoppedPeer;
+    }
+#endif
+
+private:
+    int numStoppedPeer;
 };
 
 #endif

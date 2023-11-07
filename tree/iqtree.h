@@ -730,6 +730,11 @@ public:
     void sendStopMessage();
 
     /**
+     * MPI: A process sends top message to all workers (in peer-to-peer model)
+    */
+    void sendStopMessagePtoP();
+
+    /**
      *  Generate the initial parsimony/random trees, called by initCandidateTreeSet
      *  @param nParTrees number of parsimony/random trees to generate
      */
