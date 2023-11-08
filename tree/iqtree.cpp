@@ -2458,6 +2458,8 @@ double IQTree::doTreeSearch() {
     }
 
 #ifdef _IQTREE_MPI
+    printf("Process %d: Wating for stop messages...\n",
+            MPIHelper::getInstance().getProcessID());
     while (MPIHelper::getInstance().getNumStopPeer()
         != MPIHelper::getInstance().getNumProcesses() - 1) {
         
