@@ -110,7 +110,6 @@ int MPIHelper::sizeOf(MPI_Datatype thisType) {
 
 void MPIHelper::sendString(string &str, int dest, int tag) {
     char *buf = (char*)str.c_str();
-    // printf("IT'S RUNNING HERE\n"); // It's running here ><
     MPI_Send(buf, str.length()+1, MPI_CHAR, dest, tag, MPI_COMM_WORLD);
     
     // increase storage send
@@ -121,6 +120,16 @@ void MPIHelper::sendCheckpoint(Checkpoint *ckp, int dest) {
     stringstream ss;
     ckp->dump(ss);
     string str = ss.str();
+    
+    vector<int> avail;
+    ckp->getVector("availableProcesses", avail);
+    printf("improved: %d\n", ckp->getBool("improved"));
+    printf("improvedMessage: %d\n", ckp->getBool("improvedMessage"));
+    printf("stop: %d\n", ckp->getBool("stop"));
+    for (auto i: avail)
+        printf("%d ", i);
+    printf("\n");
+
     sendString(str, dest, TREE_TAG);
     
 }

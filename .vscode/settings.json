@@ -17,7 +17,12 @@
         "initializer_list": "cpp",
         "bitset": "cpp",
         "utility": "cpp",
-        "iostream": "cpp"
+        "iostream": "cpp",
+        "iosfwd": "cpp",
+        "memory": "cpp",
+        "istream": "cpp",
+        "functional": "cpp",
+        "tuple": "cpp"
     },
     "C_Cpp.dimInactiveRegions": false
 }
