@@ -22,7 +22,8 @@
         "memory": "cpp",
         "istream": "cpp",
         "functional": "cpp",
-        "tuple": "cpp"
+        "tuple": "cpp",
+        "ostream": "cpp"
     },
     "C_Cpp.dimInactiveRegions": false
 }

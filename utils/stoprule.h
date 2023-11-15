@@ -114,7 +114,28 @@ public:
         should_stop = true;
     }
 
+	void stopProcess(int worker) {
+		for (int i = 0; i < runningProcesses.size(); ++i) {
+			if (worker == runningProcesses[i]) {
+				runningProcesses.erase(runningProcesses.begin() + i);
+				break;
+			}
+		}
+	}
+
+	bool allDone() {
+		return runningProcesses.empty();
+	}
+
+	vector<int> getRunningProcesses() {
+		return runningProcesses;
+	}
+	
+	bool isForceStop() {
+		return should_stop;
+	}
 private:
+	vector<int> runningProcesses;
 
     /**
 	 *  Current iteration number

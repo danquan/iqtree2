@@ -720,9 +720,11 @@ public:
 
     void syncCurrentTree();
 
-    void sendCurrentTree(string tree, double score, vector<int> avail, bool improved);
+    void sendCurrentTree(string tree, double score, vector<int> avail);
 
     void receiveCurrentTree();
+
+    bool receiveBestTree();
 
     /**
         MPI: Master sends stop message to all workers
@@ -1018,7 +1020,6 @@ protected:
 
     void estimateLoglCutoffBS();
 
-    void sendImprovedMessage();
 
     //void estimateNNICutoff(Params &params);
 

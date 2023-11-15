@@ -120,7 +120,7 @@ void MPIHelper::sendCheckpoint(Checkpoint *ckp, int dest) {
     stringstream ss;
     ckp->dump(ss);
     string str = ss.str();
-    
+    /*
     vector<int> avail;
     ckp->getVector("availableProcesses", avail);
     printf("improved: %d\n", ckp->getBool("improved"));
@@ -129,7 +129,7 @@ void MPIHelper::sendCheckpoint(Checkpoint *ckp, int dest) {
     for (auto i: avail)
         printf("%d ", i);
     printf("\n");
-
+    */
     sendString(str, dest, TREE_TAG);
     
 }
