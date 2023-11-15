@@ -131,7 +131,7 @@ public:
 		return runningProcesses;
 	}
 	
-	bool isForceStop() {
+	bool isForcedStop() {
 		return should_stop;
 	}
 private:

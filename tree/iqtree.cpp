@@ -2436,19 +2436,16 @@ double IQTree::doTreeSearch() {
     
     if(params->ufboot2corr) refineBootTrees();
 
-    if (!early_stop) {
+    if (!early_stop && !stop_rule.isForcedStop()) {
         // sendStopMessage();
         sendStopMessagePtoP();
     }
 
 #ifdef _IQTREE_MPI
-    
-    printf("Process %d: All stop messages received\n",
-            MPIHelper::getInstance().getProcessID());
-
     // all should wait
+    printf("Process %d is waiting here\n", MPIHelper::getInstance().getProcessID());
     MPI_Barrier(MPI_COMM_WORLD);
-
+    printf("Process %d is running here\n", MPIHelper::getInstance().getProcessID());
     if (! MPIHelper::getInstance().isMaster()) {
         string curTree = candidateTrees.getBestCandidateTrees(1).begin()->second.tree;
         double curScore = candidateTrees.getBestCandidateTrees(1).begin()->second.score;
@@ -2459,7 +2456,7 @@ double IQTree::doTreeSearch() {
         int numTreesReceived = 1;
         while (numTreesReceived < MPIHelper::getInstance().getNumProcesses()) {
             numTreesReceived += receiveBestTree();
-            cout << "Number of trees received: " << numTreesReceived << endl;
+            printf("Number of trees received: %d\n", numTreesReceived);
         }
     }
     MPI_Barrier(MPI_COMM_WORLD);
