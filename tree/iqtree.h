@@ -725,6 +725,7 @@ public:
     void receiveCurrentTree();
 
     bool receiveBestTree();
+    void sendBestTree(string tree, double score);
 
     /**
         MPI: Master sends stop message to all workers

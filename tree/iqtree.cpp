@@ -2450,13 +2450,13 @@ double IQTree::doTreeSearch() {
         string curTree = candidateTrees.getBestCandidateTrees(1).begin()->second.tree;
         double curScore = candidateTrees.getBestCandidateTrees(1).begin()->second.score;
         printf("Best tree in processor %d: %f\n", MPIHelper::getInstance().getProcessID(), curScore);
-        sendCurrentTree(curTree, curScore, {0});
+        sendBestTree(curTree, curScore);
     } else {
         cout << "Receiving Best trees from workers..." << endl;
         int numTreesReceived = 1;
         while (numTreesReceived < MPIHelper::getInstance().getNumProcesses()) {
             numTreesReceived += receiveBestTree();
-            printf("Number of trees received: %d\n", numTreesReceived);
+            // printf("Number of trees received: %d\n", numTreesReceived);
         }
     }
     MPI_Barrier(MPI_COMM_WORLD);
@@ -4548,7 +4548,7 @@ void IQTree::syncCurrentTree() {
 void IQTree::sendCurrentTree(string tree, double score, vector<int> avail) {
     if (MPIHelper::getInstance().getNumProcesses() == 1)
         return;
-    
+    if (stop_rule.isForcedStop()) return;
 #ifdef _IQTREE_MPI
     //------ BLOCKING COMMUNICATION ------//
     if (avail.empty() || tree.empty()) {
@@ -4574,9 +4574,9 @@ void IQTree::sendCurrentTree(string tree, double score, vector<int> avail) {
     for (int i = 0; i < MPIHelper::getInstance().getNumProcesses(); i++)
         receiveCurrentTree();
     // to avoid infinity loop (eg. when 1 sends 2 and waits for 2 to send back and so does 2)
-    
-    MPIHelper::getInstance().asyncSendCheckpoint(checkpoint, worker);
-
+    if (!stop_rule.isForcedStop()) {    
+        MPIHelper::getInstance().asyncSendCheckpoint(checkpoint, worker);
+    }
     delete checkpoint;
 
 #endif
@@ -4631,6 +4631,29 @@ void IQTree::receiveCurrentTree() {
 #endif
 }
 
+void IQTree::sendBestTree(string tree, double score) {
+    if (MPIHelper::getInstance().getNumProcesses() == 1)
+        return;
+    
+#ifdef _IQTREE_MPI
+    //------ BLOCKING COMMUNICATION ------//
+    
+    Checkpoint *checkpoint = new Checkpoint;
+    CandidateSet cset;
+    cset.update(tree, score);
+    cset.setCheckpoint(checkpoint);
+    cset.saveCheckpoint();
+    assert(cset.size() == 1);
+    // printf("Worker %d sends tree to worker %d\n", MPIHelper::getInstance().getProcessID(), worker);
+    MPIHelper::getInstance().increaseTreeSent(1);
+
+    MPIHelper::getInstance().asyncSendCheckpoint(checkpoint, 0);
+
+    delete checkpoint;
+
+#endif
+}
+
 bool IQTree::receiveBestTree() {
     if (MPIHelper::getInstance().getNumProcesses() == 1)
         return 0;
@@ -4658,6 +4681,7 @@ bool IQTree::receiveBestTree() {
     string revTree;
     double revScore;
     for (CandidateSet::iterator it = cset.begin(); it != cset.end(); it++) {
+        printf("Worker %d receives best tree from worker %d, score: %f\n", MPIHelper::getInstance().getProcessID(), worker, it->second.score);
         addTreeToCandidateSet(it->second.tree, it->second.score, true, worker, revTree, revScore);
     }
     
