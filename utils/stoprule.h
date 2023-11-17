@@ -30,7 +30,7 @@ Stopping rule
 class StopRule : public CheckpointFactory
 {
 public:
-
+	
 	/**
 		constructor
 	*/
@@ -107,37 +107,20 @@ public:
     }
 
     void setCurIt(int curIteration) {
-        StopRule::curIteration = curIteration;
-    }
+	    StopRule::curIteration = curIteration;
+	}
 
     void shouldStop() {
         should_stop = true;
     }
 
-	void stopProcess(int worker) {
-		for (int i = 0; i < runningProcesses.size(); ++i) {
-			if (worker == runningProcesses[i]) {
-				runningProcesses.erase(runningProcesses.begin() + i);
-				break;
-			}
-		}
-	}
-
-	bool allDone() {
-		return runningProcesses.empty();
-	}
-
-	vector<int> getRunningProcesses() {
-		return runningProcesses;
-	}
-	
 	bool isForcedStop() {
 		return should_stop;
 	}
+	vector<pair<double, int>> bestScores;
 private:
-	vector<int> runningProcesses;
-
-    /**
+	
+	/**
 	 *  Current iteration number
 	 */
 	int curIteration;

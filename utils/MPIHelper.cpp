@@ -148,7 +148,7 @@ void MPIHelper::asyncSendString(string &str, int dest, int tag, MPI_Request *req
 void MPIHelper::asyncSendCheckpoint(Checkpoint *ckp, int dest, MPI_Request *req) {
     if(!req)
         req = new MPI_Request;
-    printf("Process %d: asyncSendCheckpoint to %d, stop message: %d\n", getProcessID(), dest, ckp->getBool("stop"));
+    // printf("Process %d: asyncSendCheckpoint to %d, stop message: %d\n", getProcessID(), dest, ckp->getBool("stop"));
     stringstream ss;
     ckp->dump(ss);
     string str = ss.str();

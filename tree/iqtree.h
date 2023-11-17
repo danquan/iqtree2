@@ -721,7 +721,7 @@ public:
     void syncCurrentTree();
 
     void sendCurrentTree(string tree, double score, vector<int> avail);
-
+    void sendCollection();
     void receiveCurrentTree();
 
     bool receiveBestTree();
@@ -1021,7 +1021,7 @@ protected:
 
     void estimateLoglCutoffBS();
 
-
+    void updateBestTrees(vector<double> scores, int processId);
     //void estimateNNICutoff(Params &params);
 
 public:

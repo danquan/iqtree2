@@ -37,10 +37,6 @@ StopRule::StopRule() : CheckpointFactory()
 	max_run_time = -1.0;
 	curIteration = 0;
     should_stop = false;
-
-	for (int i = 0; i < MPIHelper::getInstance().getNumProcesses(); i++)
-		if (i != MPIHelper::getInstance().getProcessID())
-			runningProcesses.push_back(i);
 }
 
 void StopRule::initialize(Params &params) {
