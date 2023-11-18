@@ -4560,7 +4560,7 @@ void IQTree::updateBestTrees(vector<double> scores, int processId) {
             prevBestScores.push_back(stop_rule.bestScores[i]);
         }
     }
-    for (int i = scores.size() - 1; i >= 0; --i) {
+    for (int i = 0; i < scores.size(); ++i) {
         newBestScores.push_back({- scores[i], processId});
     }
     curBestScores.resize(prevBestScores.size() + newBestScores.size());
@@ -4572,6 +4572,11 @@ void IQTree::updateBestTrees(vector<double> scores, int processId) {
         stop_rule.bestScores = curBestScores;
         stop_rule.addImprovedIteration(stop_rule.getCurIt());
         printf("BETTER SCORES FOUND HERE\n");
+        printf("BEST SCORES: ");
+        for (int i = 0; i < stop_rule.bestScores.size(); ++i) {
+            printf("%lf ", - stop_rule.bestScores[i].first);
+        }
+        printf("\n");
     }
 }
 
