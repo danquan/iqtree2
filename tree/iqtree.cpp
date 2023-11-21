@@ -2220,6 +2220,15 @@ string IQTree::optimizeBranches(int maxTraversal) {
     return tree;
 }
 
+// string pointOutfile = params->out_prefix;
+// pointOutfile += ".data";
+// ofstream pointOut;
+// //out.exceptions(ios::fallbit | ios::badbit);
+// pointOut.open(pointOutfile.c_str());
+
+string pointOutfile;
+ofstream pointOut;
+
 double IQTree::doTreeSearch() {
     
     if (params->numInitTrees > 1) {
@@ -2284,6 +2293,11 @@ double IQTree::doTreeSearch() {
                                            MAIN LOOP OF THE IQ-TREE ALGORITHM
      *=============================================================================================================*/
 
+    pointOutfile = params->out_prefix;
+    pointOutfile += ".data";
+    //out.exceptions(ios::fallbit | ios::badbit);
+    pointOut.open(pointOutfile.c_str());
+
     bool early_stop = stop_rule.meetStopCondition(stop_rule.getCurIt(), cur_correlation);
     if (!early_stop) {
         cout << "--------------------------------------------------------------------" << endl;
@@ -2297,7 +2311,6 @@ double IQTree::doTreeSearch() {
 
     // loopCount is used to detect when we sync Tree
     for (; ;) {
-
         // printf("Process %d: Current iteration %d - Last improved %d\n",
         //         MPIHelper::getInstance().getProcessID(), stop_rule.getCurIt(), stop_rule.getLastImprovedIteration());
     
@@ -4577,6 +4590,11 @@ void IQTree::updateBestTrees(vector<double> scores, int processId) {
             printf("%lf ", - stop_rule.bestScores[i].first);
         }
         printf("\n");
+
+        if (MPIHelper::getInstance().isMaster()) {
+            pointOut << stop_rule.getCurIt() <<" ";
+            pointOut << fixed << setprecision(5) << candidateTrees.getBestScore() <<'\n';
+        }
     }
 }
 
