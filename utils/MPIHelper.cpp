@@ -137,10 +137,10 @@ void MPIHelper::sendCheckpoint(Checkpoint *ckp, int dest) {
 void MPIHelper::asyncSendString(string &str, int dest, int tag, MPI_Request *req) {
     char *buf = (char*)str.c_str();
     // printf("ASYNC NHA BRO\n");
-    
+    // printf("Process %d: asyncSendString to %d, tag: %d\n", getProcessID(), dest, tag);
     MPI_Isend(buf, str.length()+1, MPI_CHAR, dest, tag, MPI_COMM_WORLD, req);
     MPI_Wait(req, MPI_STATUS_IGNORE);
-
+    // printf("Process %d: asyncSendString to %d, tag: %d DONE\n", getProcessID(), dest, tag);
     // increase storage send
     this->szDataSend += sizeOf(MPI_CHAR) * (str.length() + 1);
 }

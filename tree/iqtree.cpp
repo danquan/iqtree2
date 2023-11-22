@@ -4615,9 +4615,11 @@ void IQTree::sendCollection() {
     cset.setCheckpoint(checkpoint);
     cset.saveCheckpoint();
     MPIHelper::getInstance().increaseTreeSent(Params::getInstance().popSize);
+    for (int i = 0; i < MPIHelper::getInstance().getNumProcesses(); i++)
+        receiveCurrentTree();
     if (!stop_rule.isForcedStop())
         MPIHelper::getInstance().asyncSendCheckpoint(checkpoint, 0);
-    
+    printf("Send completely\n");
     delete checkpoint;
 
 #endif
