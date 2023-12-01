@@ -701,11 +701,14 @@ int IQTree::addTreeToCandidateSet(string treeString, double score, bool updateSt
 
 int IQTree::addTreeToCandidateSet(string treeString, double score, bool updateStopRule, int sourceProcID, string& revString, double& revScore) {
     double curBestScore = candidateTrees.getBestScore();
-    int pos = candidateTrees.update(treeString, score, revString, revScore);
+    int pos = candidateTrees.update(treeString, score);
     
-    if (pos == -2) {
-        revString = treeString;
-        revScore = score;
+    if (pos == -1) {
+        revString = "";
+        revScore = 0;
+    } else {
+        revString = candidateTrees.getBestTreeStrings(Params::getInstance().popSize + 1).back();
+        revScore = candidateTrees.getBestScores(Params::getInstance().popSize + 1).back();
     }
 
     if (updateStopRule) {
@@ -2340,7 +2343,7 @@ double IQTree::doTreeSearch() {
         curTree = getTreeString();
         curScore = computeLogL(); // reCalculate Log Likelihood
         
-        
+        // printf("Current score: %f\n", curScore);
         
         string revTree;
         double revScore;
@@ -4578,7 +4581,7 @@ void IQTree::updateBestTrees(vector<double> scores, int processId) {
     }
     curBestScores.resize(prevBestScores.size() + newBestScores.size());
     merge(prevBestScores.begin(), prevBestScores.end(), newBestScores.begin(), newBestScores.end(), curBestScores.begin());
-    curBestScores.resize(Params::getInstance().popSize);
+    curBestScores.resize(Params::getInstance().bestSize);
     printf("UPDATE BEST TREES %d\n", stop_rule.getCurIt());
     
     if (stop_rule.bestScores != curBestScores) {
@@ -4606,20 +4609,19 @@ void IQTree::sendCollection() {
     printf("Worker %d sends collection to master\n", MPIHelper::getInstance().getProcessID());
     //------ BLOCKING COMMUNICATION ------//
     if (MPIHelper::getInstance().getProcessID() == 0) {
-        updateBestTrees(candidateTrees.getBestScores(Params::getInstance().popSize), 0);
+        updateBestTrees(candidateTrees.getBestScores(Params::getInstance().bestSize), 0);
         return;
     }
     Checkpoint *checkpoint = new Checkpoint;
     checkpoint->putBool("gathering", true);
-    CandidateSet cset = candidateTrees.getBestCandidateTrees(Params::getInstance().popSize);
+    CandidateSet cset = candidateTrees.getBestCandidateTrees(Params::getInstance().bestSize);
     cset.setCheckpoint(checkpoint);
     cset.saveCheckpoint();
-    MPIHelper::getInstance().increaseTreeSent(Params::getInstance().popSize);
+    MPIHelper::getInstance().increaseTreeSent(cset.size());
     for (int i = 0; i < MPIHelper::getInstance().getNumProcesses(); i++)
         receiveCurrentTree();
     if (!stop_rule.isForcedStop())
         MPIHelper::getInstance().asyncSendCheckpoint(checkpoint, 0);
-    printf("Send completely\n");
     delete checkpoint;
 
 #endif
@@ -4706,7 +4708,7 @@ void IQTree::receiveCurrentTree() {
     double revScore;
     int pos = -2;
     for (CandidateSet::iterator it = cset.begin(); it != cset.end(); it++) {
-        pos = addTreeToCandidateSet(it->second.tree, it->second.score, true, worker, revTree, revScore);
+        pos = addTreeToCandidateSet(it->second.tree, it->second.score, false, worker, revTree, revScore);
     }
     
     checkpoint->clear();
@@ -4771,7 +4773,7 @@ bool IQTree::receiveBestTree() {
     double revScore;
     for (CandidateSet::iterator it = cset.begin(); it != cset.end(); it++) {
         printf("Worker %d receives best tree from worker %d, score: %f\n", MPIHelper::getInstance().getProcessID(), worker, it->second.score);
-        addTreeToCandidateSet(it->second.tree, it->second.score, true, worker, revTree, revScore);
+        addTreeToCandidateSet(it->second.tree, it->second.score, false, worker, revTree, revScore);
     }
     
     checkpoint->clear();

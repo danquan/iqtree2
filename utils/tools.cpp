@@ -1305,6 +1305,8 @@ void parseArg(int argc, char *argv[], Params &params) {
     params.new_heuristic = true;
     params.iteration_multiple = 1;
     params.initPS = 0.5;
+
+    params.bestSize = 1;
 #ifdef USING_PLL
     params.pll = true;
 #else
@@ -4413,6 +4415,15 @@ void parseArg(int argc, char *argv[], Params &params) {
 				ASSERT(params.popSize < params.numInitTrees);
 				continue;
 			}
+            if (strcmp(argv[cnt], "-bestsz") == 0) {
+				cnt++;
+				if (cnt >= argc)
+					throw "Use -bestsz <number_of_best_scores>";
+				params.bestSize = convert_int(argv[cnt]);
+				continue;
+			}
+            
+
 			if (strcmp(argv[cnt], "-beststart") == 0) {
 				params.bestStart = true;
 				cnt++;
