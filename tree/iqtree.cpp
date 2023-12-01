@@ -4731,6 +4731,7 @@ void IQTree::sendBestTree(string tree, double score) {
     
     Checkpoint *checkpoint = new Checkpoint;
     CandidateSet cset;
+    checkpoint->putBool("best", true);
     cset.update(tree, score);
     cset.setCheckpoint(checkpoint);
     cset.saveCheckpoint();
@@ -4764,6 +4765,10 @@ bool IQTree::receiveBestTree() {
     cset.setCheckpoint(checkpoint);
     cset.restoreCheckpoint();
     if (cset.empty()) {
+        delete checkpoint;
+        return 0;
+    }
+    if (!checkpoint->getBool("best")) {
         delete checkpoint;
         return 0;
     }
