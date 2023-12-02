@@ -2482,6 +2482,8 @@ double IQTree::doTreeSearch() {
             // printf("Number of trees received: %d\n", numTreesReceived);
         }
     }
+    pointOut << stop_rule.getCurIt() <<" ";
+    pointOut << fixed << setprecision(5) << candidateTrees.getBestScore() <<'\n';
     MPI_Barrier(MPI_COMM_WORLD);
 #endif
     // printf("Process %d is running here 0\n", MPIHelper::getInstance().getProcessID());
@@ -4596,7 +4598,7 @@ void IQTree::updateBestTrees(vector<double> scores, int processId) {
 
         if (MPIHelper::getInstance().isMaster()) {
             pointOut << stop_rule.getCurIt() <<" ";
-            pointOut << fixed << setprecision(5) << candidateTrees.getBestScore() <<'\n';
+            pointOut << fixed << setprecision(5) << - stop_rule.bestScores[0].first <<'\n';
         }
     }
 }
