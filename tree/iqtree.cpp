@@ -712,12 +712,7 @@ int IQTree::addTreeToCandidateSet(string treeString, double score, bool updateSt
     }
 
     if (updateStopRule) {
-        stop_rule.setCurIt(stop_rule.getCurIt() + 1);
-
-        const int GAP_LENGTH = 10;
-        if (stop_rule.getCurIt() % GAP_LENGTH == 0) {
-            sendCollection();
-        }
+        // now do nothing
     }
 
     
@@ -2313,7 +2308,7 @@ double IQTree::doTreeSearch() {
     stop_rule.getUFBootCountCheck(ufboot_count, ufboot_count_check);
 
     // loopCount is used to detect when we sync Tree
-    for (; ;) {
+    for (int loopCount; !stop_rule.meetStopCondition(stop_rule.getCurIt(), cur_correlation);++loopCount) {
         // printf("Process %d: Current iteration %d - Last improved %d\n",
         //         MPIHelper::getInstance().getProcessID(), stop_rule.getCurIt(), stop_rule.getLastImprovedIteration());
     
@@ -2357,9 +2352,11 @@ double IQTree::doTreeSearch() {
                     avail.push_back(i);
             sendCurrentTree(revTree, revScore, avail); 
         }
-        
-        
-        
+
+        // we send to master each 10 hill-climbing
+        if (loopCount % 10 == 0) {
+            sendCollection();
+        }
 
         // TODO: cannot check yet, need to somehow return treechanged
 //        if (nni_count == 0 && params->snni && numPerturb > 0 && treechanged) {
@@ -2441,16 +2438,18 @@ double IQTree::doTreeSearch() {
 
         //if (params->partition_type)
         //     ((PhyloSuperTreePlen*)this)->printNNIcasesNUM();
-        if (MPIHelper::getInstance().getProcessID() == 0) {
-            if (stop_rule.meetStopCondition(stop_rule.getCurIt(), cur_correlation)) {
-                sendStopMessagePtoP();
-                break;
-            }
-        } else {
-            if (stop_rule.isForcedStop()) {
-                break;
-            }
-        }
+
+        // don't need it anymore
+        // if (MPIHelper::getInstance().getProcessID() == 0) {
+        //     if (stop_rule.meetStopCondition(stop_rule.getCurIt(), cur_correlation)) {
+        //         sendStopMessagePtoP();
+        //         break;
+        //     }
+        // } else {
+        //     if (stop_rule.isForcedStop()) {
+        //         break;
+        //     }
+        // }
     }
     cout << "MASTER: " << stop_rule.getCurIt() << " search iterations restored" << endl;
     // 2019-06-03: check convergence here to avoid effect of refineBootTrees
@@ -2465,10 +2464,15 @@ double IQTree::doTreeSearch() {
 
 
 #ifdef _IQTREE_MPI
+    if (MPIHelper::getInstance().isMaster()) {
+        sendStopMessagePtoP();
+    }
+
     // all should wait
     printf("Process %d is waiting here\n", MPIHelper::getInstance().getProcessID());
     MPI_Barrier(MPI_COMM_WORLD);
     printf("Process %d is running here\n", MPIHelper::getInstance().getProcessID());
+
     if (! MPIHelper::getInstance().isMaster()) {
         string curTree = candidateTrees.getBestCandidateTrees(1).begin()->second.tree;
         double curScore = candidateTrees.getBestCandidateTrees(1).begin()->second.score;
@@ -2484,6 +2488,7 @@ double IQTree::doTreeSearch() {
         pointOut << stop_rule.getCurIt() <<" ";
         pointOut << fixed << setprecision(5) << candidateTrees.getBestScore() <<'\n';
     }
+
     MPI_Barrier(MPI_COMM_WORLD);
 #endif
     // printf("Process %d is running here 0\n", MPIHelper::getInstance().getProcessID());
@@ -4572,6 +4577,34 @@ void IQTree::syncCurrentTree() {
 
 void IQTree::updateBestTrees(vector<double> scores, int processId) {
     assert(MPIHelper::getInstance().isMaster());
+
+    // Print
+    {
+        double curBestScore;
+        
+        if (!stop_rule.bestScores.empty()) {
+            curBestScore = -stop_rule.bestScores[0].first;
+        }
+
+        for (int i = 0; i < (int)scores.size(); ++ i) {
+            stop_rule.setCurIt(stop_rule.getCurIt() + 1);
+
+            double newScore = scores[i];
+            if ((i == 0 && stop_rule.bestScores.empty()) || newScore > curBestScore) {
+                stop_rule.addImprovedIteration(stop_rule.getCurIt());
+                curBestScore = newScore;
+                cout << "BETTER TREE FOUND at iteration " << stop_rule.getCurIt() << ": " << newScore << endl;
+
+                pointOut << stop_rule.getCurIt() <<" ";
+                pointOut << fixed << setprecision(5) << newScore <<'\n';
+            }
+
+            curScore = newScore;
+            printIterationInfo(processId);
+        }
+    }
+
+
     vector<pair<double, int>> prevBestScores, curBestScores, newBestScores;
     for (int i = 0; i < stop_rule.bestScores.size(); ++i) {
         if (stop_rule.bestScores[i].second != processId) {
@@ -4584,22 +4617,22 @@ void IQTree::updateBestTrees(vector<double> scores, int processId) {
     curBestScores.resize(prevBestScores.size() + newBestScores.size());
     merge(prevBestScores.begin(), prevBestScores.end(), newBestScores.begin(), newBestScores.end(), curBestScores.begin());
     curBestScores.resize(Params::getInstance().bestSize);
-    printf("UPDATE BEST TREES %d\n", stop_rule.getCurIt());
     
     if (stop_rule.bestScores != curBestScores) {
         stop_rule.bestScores = curBestScores;
-        stop_rule.addImprovedIteration(stop_rule.getCurIt());
-        printf("BETTER SCORES FOUND HERE\n");
-        printf("BEST SCORES: ");
-        for (int i = 0; i < stop_rule.bestScores.size(); ++i) {
-            printf("%lf ", - stop_rule.bestScores[i].first);
-        }
-        printf("\n");
+        // stop_rule.addImprovedIteration(stop_rule.getCurIt());
+        // printf("BETTER SCORES FOUND HERE\n");
+        // printf("BEST SCORES: ");
+        // for (int i = 0; i < stop_rule.bestScores.size(); ++i) {
+        //     printf("%lf ", - stop_rule.bestScores[i].first);
+        // }
+        // printf("\n");
 
-        if (MPIHelper::getInstance().isMaster()) {
-            pointOut << stop_rule.getCurIt() <<" ";
-            pointOut << fixed << setprecision(5) << - stop_rule.bestScores[0].first <<'\n';
-        }
+        // if (MPIHelper::getInstance().isMaster()) {
+        //     pointOut << stop_rule.getCurIt() <<" ";
+        //     pointOut << fixed << setprecision(5) << - stop_rule.bestScores[0].first <<'\n';
+        // }
+        printf("UPDATE BEST TREE SET at iteration %d\n", stop_rule.getCurIt());
     }
 }
 
@@ -4696,9 +4729,12 @@ void IQTree::receiveCurrentTree() {
     MPIHelper::getInstance().increaseTreeReceived(cset.size());
 
     if (checkpoint->getBool("gathering")) {
-        stop_rule.setCurIt(stop_rule.getCurIt() + 10);
         vector<double> score = cset.getBestScores(cset.size());
         updateBestTrees(score, worker);
+        for (int iter = max(0, 10 - (int)score.size()); iter; --iter) {
+            stop_rule.setCurIt(stop_rule.getCurIt() + 1);
+            printIterationInfo(worker);
+        }
         delete checkpoint;
         return;
     }
