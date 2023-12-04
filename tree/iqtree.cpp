@@ -4645,6 +4645,10 @@ void IQTree::sendCollection() {
     //------ BLOCKING COMMUNICATION ------//
     if (MPIHelper::getInstance().getProcessID() == 0) {
         updateBestTrees(candidateTrees.getBestScores(Params::getInstance().bestSize), 0);
+        for (int iter = max(0, 10 - Params::getInstance().bestSize); iter; --iter) {
+            stop_rule.setCurIt(stop_rule.getCurIt() + 1);
+            printIterationInfo(0);
+        }
         return;
     }
     Checkpoint *checkpoint = new Checkpoint;
