@@ -2315,6 +2315,7 @@ double IQTree::doTreeSearch() {
         pair<int, int> nniInfos; // <num_NNIs, num_steps>
         nniInfos = doNNISearch();
         curTree = getTreeString();
+        dist[curTree] = curDepth + 1;
         int pos = addTreeToCandidateSet(curTree, curScore, true, MPIHelper::getInstance().getProcessID());
         if (pos != -2 && pos != -1 && (Params::getInstance().fixStableSplits || Params::getInstance().adaptPertubation))
             candidateTrees.computeSplitOccurences(Params::getInstance().stableSplitThreshold);
@@ -2446,6 +2447,8 @@ double IQTree::doTreeSearch() {
 
     cout << "TREE SEARCH COMPLETED AFTER " << stop_rule.getCurIt() << " ITERATIONS"
     << " / Time: " << convert_time(getRealTime() - params->start_real_time) << endl << endl;
+
+    cout << "Depth of best tree: " << dist[candidateTrees.getBestTreeStrings()[0]] << endl; 
 
     return candidateTrees.getBestScore();
 
@@ -2911,6 +2914,7 @@ double IQTree::doTreePerturbation() {
             } else {
                 readTreeString(candidateTrees.getRandTopTree(Params::getInstance().popSize));
             }
+            curDepth = dist[getTreeString()];
             if (Params::getInstance().iqp) {
                 doIQP();
             } else if (Params::getInstance().adaptPertubation) {
@@ -2921,6 +2925,7 @@ double IQTree::doTreePerturbation() {
         } else {
             // Using the IQPNNI algorithm (best tree is selected)
             readTreeString(getBestTrees()[0]);
+            curDepth = dist[getTreeString()];
             doIQP();
         }
         if (params->count_trees) {
@@ -4416,13 +4421,17 @@ void IQTree::syncCurrentTree() {
     Checkpoint *checkpoint = new Checkpoint;
     string tree;
     double score;
-
+    int depth;
+    vector<int> depths;
     if (MPIHelper::getInstance().isMaster()) {
         // master: receive tree from WORKERS
         int worker = MPIHelper::getInstance().recvCheckpoint(checkpoint);
         MPIHelper::getInstance().increaseTreeReceived();
         CKP_RESTORE(tree);
         CKP_RESTORE(score);
+        CKP_RESTORE(depth);
+        assert(dist.find(tree) == dist.end() || dist[tree] == depth);
+        dist[tree] = depth;
         int pos = addTreeToCandidateSet(tree, score, true, worker);
         if (pos >= 0 && pos < params->popSize) {
             // candidate set is changed, update for other workers
@@ -4440,9 +4449,13 @@ void IQTree::syncCurrentTree() {
         if (boot_samples.size() > 0)
             CKP_SAVE(logl_cutoff);
         if (candidateset_changed[worker]) {
+            depths.clear();
             CandidateSet cset = candidateTrees.getBestCandidateTrees(Params::getInstance().popSize);
             cset.setCheckpoint(checkpoint);
             cset.saveCheckpoint();
+            for (CandidateSet::iterator it = cset.begin(); it != cset.end(); it++)
+                depths.push_back(dist[it->second.tree]);
+            CKP_VECTOR_SAVE(depths);
             candidateset_changed[worker] = false;
             MPIHelper::getInstance().increaseTreeSent(Params::getInstance().popSize);
         }
@@ -4451,8 +4464,10 @@ void IQTree::syncCurrentTree() {
         // worker: always send tree to MASTER
         tree = getTreeString();
         score = curScore;
+        depth = dist[tree];
         CKP_SAVE(tree);
         CKP_SAVE(score);
+        CKP_SAVE(depth);
         if (boot_samples.size() > 0) {
             saveUFBoot(checkpoint);
         }
@@ -4468,8 +4483,13 @@ void IQTree::syncCurrentTree() {
             CandidateSet cset;
             cset.setCheckpoint(checkpoint);
             cset.restoreCheckpoint();
-            for (CandidateSet::iterator it = cset.begin(); it != cset.end(); it++)
+            CKP_VECTOR_RESTORE(depths);
+            assert(depths.size() == cset.size());
+            int i = 0;
+            for (CandidateSet::iterator it = cset.begin(); it != cset.end(); it++, ++i) {
+                dist[it->second.tree] = depths[i];
                 addTreeToCandidateSet(it->second.tree, it->second.score, false, MPIHelper::getInstance().getProcessID());
+            }
             MPIHelper::getInstance().increaseTreeReceived(cset.size());
             if (boot_samples.size() > 0)
                 CKP_RESTORE(logl_cutoff);
@@ -4507,6 +4527,12 @@ void IQTree::sendStopMessage() {
             MPIHelper::getInstance().increaseTreeReceived();
             CKP_RESTORE(tree);
             CKP_RESTORE(score);
+            int depth;
+            CKP_RESTORE(depth);
+            
+            assert(dist.find(tree) == dist.end() || dist[tree] == depth);
+            dist[tree] = depth;
+
             addTreeToCandidateSet(tree, score, true, worker);
             MPIHelper::getInstance().sendString(str, worker, TREE_TAG);
         }
