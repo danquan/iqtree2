@@ -127,7 +127,7 @@ public:
      */
     int update(string newTree, double newScore);
 
-    int update(string newTree, double newScore, string& revTree, double& revScore);
+    int update(string newTree, double newScore, int dist);
 
     /**
      *  Get the \a numBestScores best scores in the candidate set

@@ -268,50 +268,6 @@ int CandidateSet::update(string newTree, double newScore) {
     return treePos;
 }
 
-int CandidateSet::update(string newTree, double newScore, string& revTree, double& revScore) {
-    // Do not update candidate set if the new tree has worse score than the
-    // worst tree in the candidate set
-    auto front = begin();
-    if ( size() >= maxSize && front!=end() && newScore < front->first ) {
-        return -2;
-    }
-    CandidateTree candidate;
-    candidate.score = newScore;
-    candidate.topology = convertTreeString(newTree);
-    candidate.tree = newTree;
-
-    int treePos;
-    CandidateSet::iterator candidateTreeIt;
-
-    if (treeTopologyExist(candidate.topology)) {
-        // update new score if it is better the old score
-        double oldScore = topologies[candidate.topology];
-        if (oldScore < newScore) {
-            revTree = candidate.tree;
-            revScore = oldScore;
-            removeCandidateTree(candidate.topology);
-            insert(CandidateSet::value_type(newScore, candidate));
-            topologies[candidate.topology] = newScore;
-        }
-        ASSERT(topologies.size() == size());
-        return -1;
-    }
-
-    candidateTreeIt = insert(CandidateSet::value_type(newScore, candidate));
-    topologies[candidate.topology] = newScore;
-
-    if (size() > maxSize) {
-        revTree = begin()->second.tree;
-        revScore = begin()->second.score;
-        removeWorstTree();
-    }
-    ASSERT(topologies.size() == size());
-
-    treePos = distance(candidateTreeIt, end());
-
-    return treePos;
-}
-
 vector<double> CandidateSet::getBestScores(int numBestScore) {
     if (numBestScore == 0)
         numBestScore = size();
