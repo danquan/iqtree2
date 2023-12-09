@@ -4642,6 +4642,7 @@ void IQTree::sendCollection() {
     if (stop_rule.isForcedStop()) return;
 #ifdef _IQTREE_MPI
     printf("Worker %d sends collection to master\n", MPIHelper::getInstance().getProcessID());
+
     //------ BLOCKING COMMUNICATION ------//
     if (MPIHelper::getInstance().getProcessID() == 0) {
         updateBestTrees(candidateTrees.getBestScores(Params::getInstance().bestSize), 0);
@@ -4651,15 +4652,18 @@ void IQTree::sendCollection() {
         }
         return;
     }
+
     Checkpoint *checkpoint = new Checkpoint;
     checkpoint->putBool("gathering", true);
-    CandidateSet cset = candidateTrees.getBestCandidateTrees(Params::getInstance().bestSize);
-    cset.setCheckpoint(checkpoint);
-    cset.saveCheckpoint();
-    MPIHelper::getInstance().increaseTreeSent(cset.size());
-    for (int i = 0; i < MPIHelper::getInstance().getNumProcesses(); i++)
-        receiveCurrentTree();
-    if (!stop_rule.isForcedStop())
+    vector<double> scores = candidateTrees.getBestScores(Params::getInstance().bestSize);
+    checkpoint->putVector("scores", scores);
+    
+    MPIHelper::getInstance().increaseTreeSent(Params::getInstance().bestSize);
+
+    // for (int i = 0; i < MPIHelper::getInstance().getNumProcesses(); i++)
+    //     receiveCurrentTree();
+
+    // if (!stop_rule.isForcedStop())
         MPIHelper::getInstance().asyncSendCheckpoint(checkpoint, 0);
     delete checkpoint;
 
@@ -4669,7 +4673,8 @@ void IQTree::sendCollection() {
 void IQTree::sendCurrentTree(string tree, double score, vector<int> avail) {
     if (MPIHelper::getInstance().getNumProcesses() == 1)
         return;
-    if (stop_rule.isForcedStop()) return;
+    if (stop_rule.isForcedStop()) 
+        return;
 #ifdef _IQTREE_MPI
     //------ BLOCKING COMMUNICATION ------//
     if (avail.empty() || tree.empty()) {
@@ -4692,12 +4697,12 @@ void IQTree::sendCurrentTree(string tree, double score, vector<int> avail) {
     // printf("Worker %d sends tree to worker %d\n", MPIHelper::getInstance().getProcessID(), worker);
     MPIHelper::getInstance().increaseTreeSent(1);
 
-    for (int i = 0; i < MPIHelper::getInstance().getNumProcesses(); i++)
-        receiveCurrentTree();
-    // to avoid infinity loop (eg. when 1 sends 2 and waits for 2 to send back and so does 2)
-    if (!stop_rule.isForcedStop()) {    
-        MPIHelper::getInstance().asyncSendCheckpoint(checkpoint, worker);
-    }
+    // for (int i = 0; i < MPIHelper::getInstance().getNumProcesses(); i++)
+    //     receiveCurrentTree();
+    // // to avoid infinity loop (eg. when 1 sends 2 and waits for 2 to send back and so does 2)
+    // if (!stop_rule.isForcedStop()) {    
+    MPIHelper::getInstance().asyncSendCheckpoint(checkpoint, worker);
+    // }
     delete checkpoint;
 
 #endif
@@ -4726,14 +4731,9 @@ void IQTree::receiveCurrentTree() {
         return;
     }
 
-    
-    CandidateSet cset;
-    cset.setCheckpoint(checkpoint);
-    cset.restoreCheckpoint();
-    MPIHelper::getInstance().increaseTreeReceived(cset.size());
-
     if (checkpoint->getBool("gathering")) {
-        vector<double> score = cset.getBestScores(cset.size());
+        vector<double> score;
+        checkpoint->getVector("scores", score);
         updateBestTrees(score, worker);
         for (int iter = max(0, 10 - (int)score.size()); iter; --iter) {
             stop_rule.setCurIt(stop_rule.getCurIt() + 1);
@@ -4741,7 +4741,12 @@ void IQTree::receiveCurrentTree() {
         }
         delete checkpoint;
         return;
-    }
+    }    
+    
+    CandidateSet cset;
+    cset.setCheckpoint(checkpoint);
+    cset.restoreCheckpoint();
+    MPIHelper::getInstance().increaseTreeReceived(cset.size());
 
     vector<int> avail;
     checkpoint->getVector("availableProcesses", avail);
@@ -4878,8 +4883,8 @@ void IQTree::sendStopMessagePtoP() {
 
     printf("Worker %d sends STOP message to processes\n", MPIHelper::getInstance().getProcessID());
 
-    for (int w = 0; w < MPIHelper::getInstance().getNumProcesses(); w++) 
-        receiveCurrentTree();
+    // for (int w = 0; w < MPIHelper::getInstance().getNumProcesses(); w++) 
+    //     receiveCurrentTree();
     for (int w = 0; w < MPIHelper::getInstance().getNumProcesses(); w++) 
         if (w != MPIHelper::getInstance().getProcessID()) {
             MPIHelper::getInstance().asyncSendCheckpoint(checkpoint, w);
