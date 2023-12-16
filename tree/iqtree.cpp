@@ -700,10 +700,9 @@ int IQTree::addTreeToCandidateSet(string treeString, double score, bool updateSt
 }
 
 int IQTree::addTreeToCandidateSet(string treeString, double score, bool updateStopRule, int sourceProcID, string& revString, double& revScore) {
-    double curBestScore = candidateTrees.getBestScore();
     int pos = candidateTrees.update(treeString, score);
     
-    if (pos == -1) {
+    if (pos == -1 || pos > Params::getInstance().popSize) {
         revString = "";
         revScore = 0;
     } else {
@@ -2345,7 +2344,7 @@ double IQTree::doTreeSearch() {
         int pos = addTreeToCandidateSet(curTree, curScore, true, MPIHelper::getInstance().getProcessID(), revTree, revScore);
         if (pos != -2 && pos != -1 && (Params::getInstance().fixStableSplits || Params::getInstance().adaptPertubation))
             candidateTrees.computeSplitOccurences(Params::getInstance().stableSplitThreshold);
-        if (pos != -2) {
+        if (pos != -2 && !revTree.empty()) {
             vector<int> avail;
             for (int i = 0; i < MPIHelper::getInstance().getNumProcesses(); ++i)
                 if (i != MPIHelper::getInstance().getProcessID())
@@ -4770,7 +4769,7 @@ void IQTree::receiveCurrentTree() {
     
     checkpoint->clear();
     
-    if (pos != -2 && revTree.size()) {
+    if (pos != -2 && !revTree.empty()) {
         sendCurrentTree(revTree, revScore, avail);
     }
     
