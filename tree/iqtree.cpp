@@ -4771,6 +4771,8 @@ void IQTree::receiveCurrentTree() {
     
     if (pos != -2 && !revTree.empty()) {
         sendCurrentTree(revTree, revScore, avail);
+    } else if (pos > Params::getInstance().popSize) {
+        sendCurrentTree(tree, score, avail);
     }
     
     delete checkpoint;
