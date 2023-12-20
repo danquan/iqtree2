@@ -2315,7 +2315,8 @@ double IQTree::doTreeSearch() {
         pair<int, int> nniInfos; // <num_NNIs, num_steps>
         nniInfos = doNNISearch();
         curTree = getTreeString();
-        cout << "Currrent score: " << curScore << " Real Score: " << computeLogL() << "\n";
+        curScore = computeLogL(); // recompute log-likelihood
+
         dist[curTree] = curDepth + 1;
         int pos = addTreeToCandidateSet(curTree, curScore, true, MPIHelper::getInstance().getProcessID());
         if (pos != -2 && pos != -1 && (Params::getInstance().fixStableSplits || Params::getInstance().adaptPertubation))
