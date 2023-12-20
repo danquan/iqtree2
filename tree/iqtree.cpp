@@ -702,7 +702,7 @@ int IQTree::addTreeToCandidateSet(string treeString, double score, bool updateSt
 int IQTree::addTreeToCandidateSet(string treeString, double score, bool updateStopRule, int sourceProcID, string& revString, double& revScore) {
     int pos = candidateTrees.update(treeString, score);
     
-    if (pos == -1 || pos > Params::getInstance().popSize) {
+    if (pos == -2 || pos == -1 || pos > Params::getInstance().popSize) {
         revString = "";
         revScore = 0;
     } else {
@@ -2486,6 +2486,12 @@ double IQTree::doTreeSearch() {
         }
         cout << "All best trees received!" << endl;
         cout << "Depth of best tree: " << dist[candidateTrees.getBestTreeStrings()[0]] << endl;
+
+        int ans = 0;
+        for (auto v : dist) {
+            ans = max(ans, v.second);
+        }
+        cout << "Deepest tree with the depth: " << ans << endl;
 
         pointOut << stop_rule.getCurIt() <<" ";
         pointOut << fixed << setprecision(5) << candidateTrees.getBestScore() <<'\n';
@@ -4769,9 +4775,9 @@ void IQTree::receiveCurrentTree() {
     
     checkpoint->clear();
     
-    if (pos != -2 && !revTree.empty()) {
+    if (!revTree.empty()) {
         sendCurrentTree(revTree, revScore, avail);
-    } else if (pos > Params::getInstance().popSize) {
+    } else {
         sendCurrentTree(tree, score, avail);
     }
     
