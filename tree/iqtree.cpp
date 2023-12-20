@@ -2449,7 +2449,12 @@ double IQTree::doTreeSearch() {
     cout << "TREE SEARCH COMPLETED AFTER " << stop_rule.getCurIt() << " ITERATIONS"
     << " / Time: " << convert_time(getRealTime() - params->start_real_time) << endl << endl;
 
-    cout << "Depth of best tree: " << dist[candidateTrees.getBestTreeStrings()[0]] << endl; 
+    cout << "Depth of best tree: " << dist[candidateTrees.getBestTreeStrings()[0]] << endl;
+    int ans = 0;
+    for (auto v : dist) {
+        ans = max(ans, v.second);
+    }
+    cout << "Deepest tree with the depth: " << ans << endl;
 
     return candidateTrees.getBestScore();
 
