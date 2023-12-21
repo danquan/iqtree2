@@ -2463,9 +2463,6 @@ protected:
     virtual void saveCurrentTree(double logl) {
     } // save current tree
 
-    int curDepth;
-    map<string, int> dist;
-
     /**
      * Current score of the tree;
      */

@@ -717,15 +717,18 @@ public:
         @param curTree current tree
 
     */
-
     void syncCurrentTree();
 
+    // new send tree
     void sendCurrentTree(string tree, double score, vector<int> avail);
-    void sendCollection();
     void receiveCurrentTree();
 
-    bool receiveBestTree();
-    void sendBestTree(string tree, double score);
+    // send score of each iter after 10 iters
+    void sendCollection(vector<double> scores);
+
+    // receive tree after main loop
+    void sendBestTrees();
+    bool receiveBestTrees();
 
     /**
         MPI: Master sends stop message to all workers
@@ -1056,5 +1059,14 @@ public:
     bool on_refine_btree;
     Alignment* saved_aln_on_refine_btree;
     vector<IntVector> boot_samples_int;
+
+protected: // for debuging and development
+    int curDepth;
+    map<string, int> dist;
+
+    // for printing best tree
+    string depthOutfile;
+    ofstream depthOut;
+    string depthOfTopTree;
 };
 #endif
