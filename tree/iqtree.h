@@ -1022,5 +1022,14 @@ public:
     bool on_refine_btree;
     Alignment* saved_aln_on_refine_btree;
     vector<IntVector> boot_samples_int;
+
+protected:// for debuging and development
+    int curDepth;
+    map<string, int> dist;
+    
+    // for printing tree depth
+    string depthOutfile;
+    ofstream depthOut;
+    string depthOfTopTree;
 };
 #endif

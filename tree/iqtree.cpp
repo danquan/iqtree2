@@ -2450,12 +2450,49 @@ double IQTree::doTreeSearch() {
     cout << "TREE SEARCH COMPLETED AFTER " << stop_rule.getCurIt() << " ITERATIONS"
     << " / Time: " << convert_time(getRealTime() - params->start_real_time) << endl << endl;
 
-    cout << "Depth of best tree: " << dist[candidateTrees.getBestTreeStrings()[0]] << endl;
+    // print tree depth
+    CandidateSet cset = candidateTrees.getBestCandidateTrees(Params::getInstance().popSize);
+    stringstream content;
+    content << "Process&" << MPIHelper::getInstance().getProcessID() << ":,";
+    for (auto ctree : cset) {
+        content << fixed << setprecision(3) << ctree.second.score << "&" << dist[ctree.second.tree] << ",";
+    }
     int ans = 0;
     for (auto v : dist) {
         ans = max(ans, v.second);
     }
-    cout << "Deepest tree with the depth: " << ans << endl;
+    content << "Deepest&tree:&" << ans << ",";
+    depthOfTopTree = content.str();
+
+    Checkpoint *checkpoint = new Checkpoint;
+
+    if (MPIHelper::getInstance().isMaster()) {
+        depthOutfile = params->out_prefix;
+        depthOutfile += ".depth";
+        depthOut.open(depthOutfile.c_str());
+
+        std::replace(depthOfTopTree.begin(), depthOfTopTree.end(), '&', ' ');
+        std::replace(depthOfTopTree.begin(), depthOfTopTree.end(), ',', '\n');
+        depthOut << depthOfTopTree;
+        
+#ifdef _IQTREE_MPI
+        for (int i = 1; i < MPIHelper::getInstance().getNumProcesses(); ++i) {
+                MPIHelper::getInstance().recvCheckpoint(checkpoint);
+                CKP_RESTORE(depthOfTopTree);
+
+                std::replace(depthOfTopTree.begin(), depthOfTopTree.end(), '&', ' ');
+                std::replace(depthOfTopTree.begin(), depthOfTopTree.end(), ',', '\n');
+                depthOut << depthOfTopTree;
+        }
+#endif
+
+        depthOut.close();
+    } else {
+#ifdef _IQTREE_MPI
+        CKP_SAVE(depthOfTopTree);
+        MPIHelper::getInstance().sendCheckpoint(checkpoint, 0);
+#endif
+    }
 
     return candidateTrees.getBestScore();
 

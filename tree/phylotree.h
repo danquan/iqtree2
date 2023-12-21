@@ -2445,9 +2445,6 @@ protected:
 //    UBYTE *tmp_scale_num1;
 //    UBYTE *tmp_scale_num2;
 
-    int curDepth;
-    map<string, int> dist;
-
     /****************************************************************************
             Vector of bit blocks, used for parsimony function
      ****************************************************************************/
