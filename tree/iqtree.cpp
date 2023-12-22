@@ -2441,9 +2441,10 @@ double IQTree::doTreeSearch() {
 #ifdef _IQTREE_MPI
     cout << "Total number of trees received: " << MPIHelper::getInstance().getNumTreeReceived() << endl;
     cout << "Total number of trees sent: " << MPIHelper::getInstance().getNumTreeSent() << endl;
-    cout << "Total number of NNI searches done by myself: " << MPIHelper::getInstance().getNumNNISearch() << endl;
-    cout << "Total size of sended messages: " << MPIHelper::getInstance().getSizeDataSend() << " bytes" << endl;
-    cout << "Total size of received messages: " << MPIHelper::getInstance().getSizeDataRecv() << " bytes" << endl;
+
+    printf("Total number of NNI searches done by processor %d: %d\n", MPIHelper::getInstance().getProcessID(), MPIHelper::getInstance().getNumNNISearch());
+    printf("Total size of sended messages in processor %d (bytes): %d\n", MPIHelper::getInstance().getProcessID(), MPIHelper::getInstance().getSizeDataSend());
+    printf("Total size of received messages in processor %d (bytes): %d\n", MPIHelper::getInstance().getProcessID(), MPIHelper::getInstance().getSizeDataRecv());
     MPIHelper::getInstance().resetNumbers();
 #endif
 
