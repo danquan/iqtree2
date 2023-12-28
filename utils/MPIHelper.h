@@ -106,6 +106,7 @@ public:
 
 #ifdef _IQTREE_MPI
     void sendString(string &str, int dest, int tag);
+    void asyncSendString(string &str, int dest, int tag);
 
     /** wrapper for MPI_Recv a string
         @param[out] str string received
@@ -120,6 +121,12 @@ public:
         @param dest destination process
     */
     void sendCheckpoint(Checkpoint *ckp, int dest);
+
+    /** wrapper for MPI_Isend an entire Checkpoint object
+        @param ckp Checkpoint object to send
+        @param dest destination process
+    */
+    void asyncSendCheckpoint(Checkpoint *ckp, int dest);
 
     /** wrapper for MPI_Recv an entire Checkpoint object
         @param[out] ckp Checkpoint object received
@@ -217,6 +224,12 @@ public:
     int getSizeDataSend() {
         return szDataSend;
     }
+
+private:
+    char **treeSearchBuffers;
+#ifdef _IQTREE_MPI
+    MPI_Request *req;
+#endif
 };
 
 #endif

@@ -700,6 +700,16 @@ public:
     void syncCurrentTree();
 
     /**
+     * MPI: asynchronize send tree
+    */
+    void sendCurrentTree();
+    
+    /**
+     * MPI: asynchronize receive tree
+    */
+    void recvTrees();
+
+    /**
         MPI: Master sends stop message to all workers
     */
     void sendStopMessage();

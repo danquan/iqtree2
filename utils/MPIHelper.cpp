@@ -31,6 +31,12 @@ void MPIHelper::init(int argc, char *argv[]) {
     setNumTreeReceived(0);
     setNumTreeSent(0);
     setNumNNISearch(0);
+
+    treeSearchBuffers = new char*[n_tasks];
+    req = new MPI_Request[n_tasks];
+	for (int i = 0; i < n_tasks; ++i) {
+        treeSearchBuffers[i] = nullptr;
+    }
 #endif
 }
 
@@ -122,6 +128,30 @@ void MPIHelper::sendCheckpoint(Checkpoint *ckp, int dest) {
     ckp->dump(ss);
     string str = ss.str();
     sendString(str, dest, TREE_TAG);
+}
+
+void MPIHelper::asyncSendString(string &str, int dest, int tag) {
+    // wait for the last request
+    if (treeSearchBuffers[dest] != nullptr) {
+        MPI_Wait(&req[dest], MPI_STATUS_IGNORE);
+        delete[] treeSearchBuffers[dest];
+        treeSearchBuffers[dest] = nullptr;
+    }
+
+    treeSearchBuffers[dest] = new char[str.length()+1];
+	strcpy(treeSearchBuffers[dest], str.c_str());
+
+    MPI_Isend(treeSearchBuffers[dest], str.length()+1, MPI_CHAR, dest, tag, MPI_COMM_WORLD, &req[dest]);
+    
+    // increase storage send
+    this->szDataSend += sizeOf(MPI_CHAR) * (str.length() + 1);
+}
+
+void MPIHelper::asyncSendCheckpoint(Checkpoint *ckp, int dest) {
+    stringstream ss;
+    ckp->dump(ss);
+    string str = ss.str();
+    asyncSendString(str, dest, TREE_TAG);
 }
 
 
