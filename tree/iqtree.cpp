@@ -877,6 +877,7 @@ void IQTree::initCandidateTreeSet(int nParTrees, int nNNITrees) {
     }
 
     //---- BLOCKING COMMUNICATION
+    MPI_Barrier(MPI_COMM_WORLD);
     syncCandidateTrees(Params::getInstance().numSupportTrees, true);
 
 }
