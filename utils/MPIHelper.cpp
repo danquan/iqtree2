@@ -211,3 +211,88 @@ MPIHelper::~MPIHelper() {
 //    cleanUpMessages();
 }
 
+#ifdef _IQTREE_MPI
+DoubleVector MPIHelper::sumProcs(DoubleVector vals)
+{
+    int proc_size = vals.size();
+    DoubleVector sum_vals(proc_size);
+    MPI_Allreduce(vals.data(), sum_vals.data(), proc_size, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+    return sum_vals;
+}
+
+IntVector MPIHelper::getProcVector(const vector<IntVector> &vts)
+{
+    IntVector cnt_vt, offset_vt, flatten_vt;
+
+    if (isMaster())
+    {
+        int offset = 0;
+        for (const auto &vt : vts)
+        {
+            cnt_vt.push_back(vt.size());
+            offset_vt.push_back(offset);
+            offset += vt.size();
+            flatten_vt.insert(flatten_vt.end(), vt.begin(), vt.end());
+        }
+    }
+
+    int out_cnt;
+    // Send cnt to each process
+    MPI_Scatter(cnt_vt.data(), 1, MPI_INT, &out_cnt,
+                1, MPI_INT, PROC_MASTER, MPI_COMM_WORLD);
+
+    IntVector out_vt(out_cnt);
+    // Send real contents to each process
+    MPI_Scatterv(flatten_vt.data(), cnt_vt.data(), offset_vt.data(), MPI_INT,
+                 out_vt.data(), out_cnt, MPI_INT, PROC_MASTER, MPI_COMM_WORLD);
+    return out_vt;
+}
+
+vector<DoubleVector> MPIHelper::gatherAllVectors(const vector<DoubleVector> &vts)
+{
+    int flatten_sz = vts.size();
+    for (const auto &vt : vts)
+    {
+        flatten_sz += vt.size();
+    }
+    DoubleVector flatten_vt(flatten_sz);
+
+    int cnt = 0;
+    for (const auto &vt : vts)
+    {
+        int vt_sz = vt.size();
+        flatten_vt[cnt++] = vt_sz;
+        memcpy(flatten_vt.data() + cnt, vt.data(), vt_sz * sizeof(double));
+        cnt += vt_sz;
+    }
+
+    int nprocs = getNumProcesses();
+    IntVector recv_cnts(nprocs);
+    IntVector displ(nprocs);
+
+    MPI_Allgather(&flatten_sz, 1, MPI_INT, recv_cnts.data(), 1, MPI_INT, MPI_COMM_WORLD);
+
+    int recv_sz = 0;
+    for (int i = 0; i < nprocs; i++)
+    {
+        displ[i] = recv_sz;
+        recv_sz += recv_cnts[i];
+    }
+
+    DoubleVector recv_vt(recv_sz);
+    MPI_Allgatherv(flatten_vt.data(), flatten_sz, MPI_DOUBLE, recv_vt.data(), recv_cnts.data(), displ.data(), MPI_DOUBLE, MPI_COMM_WORLD);
+
+    vector<DoubleVector> res_vts(vts.size() * nprocs);
+    cnt = 0;
+    for (int i = 0; i < res_vts.size(); i++)
+    {
+        int len = recv_vt[cnt++];
+        res_vts[i] = DoubleVector(len);
+        memcpy(res_vts[i].data(), recv_vt.data() + cnt, len * sizeof(double));
+        cnt += len;
+    }
+
+    return res_vts;
+}
+
+#endif

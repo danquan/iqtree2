@@ -1016,6 +1016,7 @@ void parseArg(int argc, char *argv[], Params &params) {
     int cnt;
     progress_display::setProgressDisplay(false);
     verbose_mode = VB_MIN;
+    params.pqmaker = false;
     params.tree_gen = NONE;
     params.user_file = NULL;
     params.constraint_tree_file = NULL;
@@ -1516,9 +1517,14 @@ void parseArg(int argc, char *argv[], Params &params) {
 #endif
                 continue;
             }
+
             if (strcmp(argv[cnt], "-V") == 0 || strcmp(argv[cnt], "-version") == 0 || strcmp(argv[cnt], "--version") == 0) {
                 printCopyright(cout);
                 exit(EXIT_SUCCESS);
+            }
+            if (strcmp(argv[cnt], "-pqmaker") == 0 || strcmp(argv[cnt],"--pqmaker") == 0) {
+                params.pqmaker = true;
+                continue;
             }
 			if (strcmp(argv[cnt], "-ho") == 0 || strcmp(argv[cnt], "-?") == 0) {
 				usage_iqtree(argv, false);

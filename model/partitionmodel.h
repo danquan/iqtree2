@@ -179,6 +179,13 @@ protected:
      */
     virtual bool getVariables(double *variables);
 
+private:
+#ifdef _IQTREE_MPI
+    /**
+        Synchronize tree branch lengths optimized in multiple processes
+     */
+    void syncBranchLengths();
+#endif
 };
 
 #endif

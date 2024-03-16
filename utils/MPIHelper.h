@@ -140,6 +140,53 @@ public:
         @param ckp Checkpoint object
     */
     void gatherCheckpoint(Checkpoint *ckp);
+
+    /**
+        wrapper for MPI_Allreduce to perform element-wise summation of vectors across processes
+        @param vals vector of the current process. Every vector of other processes must have the same length
+        @return the summation vector
+    */
+    DoubleVector sumProcs(DoubleVector vals);
+
+    /**
+        wrapper for MPI_Scatterv to scatter a vector of vectors to each process
+        @param vts a vector containing *numProcesses* sub-vectors
+        @return the sub-vector for the current process (process 0 gets the first sub-vector, process 1 gets the second ...)
+
+        For example:
+            vals:       0 0
+                        1 1 1
+                        2
+        Result:
+            proc 0:     0 0
+            proc 1:     1 1 1
+            proc 2:     2
+
+    */
+    IntVector getProcVector(const vector<IntVector> &vts);
+
+    /**
+        wrapper for MPI_Allgatherv to gather all vectors from every process to every process
+        @param vts all vectors processed by current process
+        @return the vector concatenated from each process' vectors
+
+        For example:
+            proc 0 (2 vec):     0 0
+                                1 1 1 1
+            proc 1 (3 vec):     2
+                                3 3 3 3
+                                4 4 4
+            proc 3 (1 vec):     5 5 5 5 5
+
+        Result:
+            all proc (6 vec):   0 0
+                                1 1 1 1
+                                2
+                                3 3 3 3
+                                4 4 4
+                                5 5 5 5 5
+     */
+    vector<DoubleVector> gatherAllVectors(const vector<DoubleVector> &vts);
 #endif
 
     void increaseTreeSent(int inc = 1) {
