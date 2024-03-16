@@ -162,6 +162,10 @@ public:
     
     bool opt_gamma_invar;
     
+#ifdef _IQTREE_MPI
+    void syncBranchLengths();
+#endif
+
 protected:
     
     /**
