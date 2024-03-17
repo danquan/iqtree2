@@ -671,7 +671,9 @@ void PhyloSuperTree::computePartitionOrder() {
         part_order[i] = id[i];
 
 #ifdef _IQTREE_MPI
-	computeProcPartitionOrder(cost);
+	if (Params::getInstance().pqmaker) {
+		computeProcPartitionOrder(cost);
+	}
 #endif
 
 	// compute part_order by number of patterns
@@ -1571,7 +1573,8 @@ void PhyloSuperTree::printBestPartitionParams(const char *filename) {
             if (!saln->partitions[part]->aln_file.empty()) out << saln->partitions[part]->aln_file << ": ";
             /*if (saln->partitions[part]->seq_type == SEQ_CODON)
                 out << "CODON, ";*/
-            out << saln->partitions[part]->sequence_type << ", ";
+			if (Params::getInstance().alisim_active)
+            	out << saln->partitions[part]->sequence_type << ", ";
             string pos = saln->partitions[part]->position_spec;
             replace(pos.begin(), pos.end(), ',' , ' ');
             out << pos << ";" << endl;
