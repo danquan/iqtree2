@@ -362,6 +362,17 @@ public:
     IntVector part_order;
     IntVector part_order_by_nptn;
 
+#ifdef _IQTREE_MPI
+    /* partition ID sorted in descending order of computation cost for this process*/
+    IntVector proc_part_order;
+
+    /* number of trees for this process */
+    size_t procSize()
+    {
+        return proc_part_order.size();
+    }
+#endif
+
     /* compute part_order vector */
     void computePartitionOrder();
 
@@ -478,9 +489,13 @@ public:
     
     /** True when mixed codon with other data type */
     bool rescale_codon_brlen;
-    
+
     int totalNNIs, evalNNIs;
 
+private:
+#ifdef _IQTREE_MPI
+    void computeProcPartitionOrder(double *);
+#endif
 };
 
 #endif

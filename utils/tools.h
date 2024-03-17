@@ -272,6 +272,11 @@ private:
 };
 
 /**
+ * vector of pair<double, int> number
+*/
+typedef pair<double, int> DoubleIntPair;
+
+/**
         vector of double number
  */
 typedef vector<double> DoubleVector;
@@ -605,6 +610,11 @@ private:
     //Params (Params const&) {}; // Disable copy constructor
     //void operator=(Params const&) {}; // Disable assignment
 public:
+
+    /**
+     * Parallel for QMaker
+    */
+    bool pqmaker;
 
     /**
     *  Fast and accurate optimiation for alpha and p_invar
