@@ -295,4 +295,28 @@ vector<DoubleVector> MPIHelper::gatherAllVectors(const vector<DoubleVector> &vts
     return res_vts;
 }
 
+int* MPIHelper::createSharedMemory(int *shmbuf) {
+    MPI_Comm_split_type(MPI_COMM_WORLD, MPI_COMM_TYPE_SHARED, 0, MPI_INFO_NULL, &shmcomm);
+
+    int shm_rank, shm_size;
+    MPI_Comm_rank(shmcomm, &shm_rank);
+    MPI_Comm_size(shmcomm, &shm_size);
+    if (shm_rank == 0) {
+        MPI_Win_allocate_shared(sizeof(int), sizeof(int), MPI_INFO_NULL, shmcomm, &shmbuf, &shmwin);
+        *shmbuf = 0;
+    } else {
+        int disp_unit;
+        MPI_Aint ssize;
+        MPI_Win_allocate_shared(0, sizeof(int), MPI_INFO_NULL, shmcomm, &shmbuf, &shmwin);
+        MPI_Win_shared_query(shmwin, 0, &ssize, &disp_unit, &shmbuf);
+    }
+    MPI_Barrier(MPI_COMM_WORLD);
+    return shmbuf;
+}
+
+void MPIHelper::deleteSharedMemory() {
+    MPI_Win_free(&shmwin);
+    MPI_Comm_free(&shmcomm);
+}
+
 #endif

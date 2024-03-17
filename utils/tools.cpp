@@ -1017,6 +1017,7 @@ void parseArg(int argc, char *argv[], Params &params) {
     progress_display::setProgressDisplay(false);
     verbose_mode = VB_MIN;
     params.pqmaker = false;
+    params.fpqmaker = false;
     params.tree_gen = NONE;
     params.user_file = NULL;
     params.constraint_tree_file = NULL;
@@ -1524,6 +1525,10 @@ void parseArg(int argc, char *argv[], Params &params) {
             }
             if (strcmp(argv[cnt], "-pqmaker") == 0 || strcmp(argv[cnt],"--pqmaker") == 0) {
                 params.pqmaker = true;
+                continue;
+            }
+            if (strcmp(argv[cnt], "-fpqmaker") == 0 || strcmp(argv[cnt],"--fpqmaker") == 0) {
+                params.fpqmaker = true;
                 continue;
             }
 			if (strcmp(argv[cnt], "-ho") == 0 || strcmp(argv[cnt], "-?") == 0) {

@@ -361,6 +361,7 @@ public:
     /* partition ID sorted in descending order of computation cost */
     IntVector part_order;
     IntVector part_order_by_nptn;
+    int *curPart;
 
 #ifdef _IQTREE_MPI
     /* partition ID sorted in descending order of computation cost for this process*/

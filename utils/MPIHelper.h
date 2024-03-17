@@ -235,6 +235,11 @@ public:
 //        numNNISearch = 0;
     }
 
+    int* createSharedMemory(int *shmbuf);
+    void deleteSharedMemory();
+    MPI_Comm shmcomm;
+    MPI_Win shmwin;
+
 private:
     int numTreeSent;
 

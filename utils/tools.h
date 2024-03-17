@@ -617,6 +617,11 @@ public:
     bool pqmaker;
 
     /**
+     * Optimize pQMaker using shared memory
+    */
+    bool fpqmaker;
+
+    /**
     *  Fast and accurate optimiation for alpha and p_invar
     */
     bool fai;

@@ -294,7 +294,37 @@ double PartitionModel::targetFunk(double x[]) {
     int ntrees = tree->size();
     if (tree->part_order.empty()) tree->computePartitionOrder();
 
-    if (Params::getInstance().pqmaker) {
+    if (Params::getInstance().fpqmaker) {
+        DoubleVector results(tree->size());
+        if (MPIHelper::getInstance().isMaster()) {
+            *(tree->curPart) = 0;
+        }
+        MPI_Barrier(MPI_COMM_WORLD);
+        
+//        #ifdef _OPENMP
+//        #pragma omp parallel for reduction(+ : res) schedule(dynamic) if (tree->num_threads > 1)
+//        #endif
+        while (true) {
+            int i;
+            MPI_Win_lock(MPI_LOCK_EXCLUSIVE, 0, 0, MPIHelper::getInstance().shmwin);
+            if ((*tree->curPart) == ntrees) i = -1;
+            else i = tree->part_order[(*tree->curPart)++];
+            MPI_Win_unlock(0, MPIHelper::getInstance().shmwin);
+            if (i == -1) break;
+            ModelSubst *part_model = tree->at(i)->getModel();
+            if (part_model->getName() != model->getName())
+                continue;
+            bool fixed = part_model->fixParameters(false);
+            results[i] = part_model->targetFunk(x);
+            part_model->fixParameters(fixed);
+        }
+
+        #ifdef _IQTREE_MPI
+            results = MPIHelper::getInstance().sumProcs(results);
+        #endif
+            for (auto e : results)
+             res += e;
+    } else if (Params::getInstance().pqmaker) {
         /*----------------------------------- Run pQMaker here ----------------------------------*/
         DoubleVector results(tree->size());
 
@@ -321,7 +351,6 @@ double PartitionModel::targetFunk(double x[]) {
         #endif
             for (auto e : results)
              res += e;
-
     } else {
         /*----------------------------------- Run QMaker here ----------------------------------*/
 
@@ -499,10 +528,65 @@ double PartitionModel::optimizeParameters(int fixed_len, bool write_info, double
 
     for (int step = 0; step < Params::getInstance().model_opt_steps; step++) {
         tree_lh = 0.0;
-        if (Params::getInstance().pqmaker) tree_lhs = DoubleVector(ntrees, 0.0);
+        if (Params::getInstance().pqmaker || Params::getInstance().fpqmaker) tree_lhs = DoubleVector(ntrees, 0.0);
         if (tree->part_order.empty()) tree->computePartitionOrder();
 
-        if (Params::getInstance().pqmaker) {
+        if (Params::getInstance().fpqmaker) {
+            if (MPIHelper::getInstance().isMaster()) {
+                *(tree->curPart) = 0;
+            }
+            MPI_Barrier(MPI_COMM_WORLD);
+//            #ifdef _OPENMP
+//            #pragma omp parallel for reduction(+: tree_lh) schedule(dynamic) if(tree->num_threads > 1)
+//            #endif
+            while (true) {
+                int part;
+                MPI_Win_lock(MPI_LOCK_EXCLUSIVE, 0, 0, MPIHelper::getInstance().shmwin);
+                if ((*tree->curPart) == ntrees) part = -1;
+                else part = tree->part_order[(*tree->curPart)++];
+                MPI_Win_unlock(0, MPIHelper::getInstance().shmwin);
+                if (part == -1) break;
+                tree->proc_part_order.push_back(part);
+                
+                double score;
+                
+                if (opt_gamma_invar)
+                    score = tree->at(part)->getModelFactory()->optimizeParametersGammaInvar(fixed_len,
+                        write_info && verbose_mode >= VB_MED,
+                        logl_epsilon/min(ntrees,10), gradient_epsilon/min(ntrees,10));
+                else
+                    score = tree->at(part)->getModelFactory()->optimizeParameters(fixed_len,
+                        write_info && verbose_mode >= VB_MED,
+                        logl_epsilon/min(ntrees,10), gradient_epsilon/min(ntrees,10));
+                tree_lhs[part] = score;
+                //tree_lh += score;
+
+                // Canh: quick fix
+                // Currently only alignments processed by master in MPI version are logged
+                // Remove logging to avoid misunderstanding
+                #ifndef _IQTREE_MPI
+                    if (write_info)
+                    #ifdef _OPENMP
+                    #pragma omp critical
+                    #endif
+                    {
+                        cout << "Partition " << tree->at(part)->aln->name
+                            << " / Model: " << tree->at(part)->getModelName()
+                            << " / df: " << tree->at(part)->getModelFactory()->getNParameters(fixed_len)
+                            << " / LogL: " << score << endl;
+                    }
+                #endif // _IQTREE_MPI
+            }
+
+        //return ModelFactory::optimizeParameters(fixed_len, write_info);
+        #ifdef _IQTREE_MPI
+            tree_lhs = MPIHelper::getInstance().sumProcs(tree_lhs);
+            syncBranchLengths();
+            tree->proc_part_order.clear();
+        #endif
+            for (auto e: tree_lhs)
+                tree_lh += e;
+        } else if (Params::getInstance().pqmaker) {
             /*----------------------------------- Run pQMaker here ----------------------------------*/
             #ifdef _IQTREE_MPI
             int proc_ntrees = tree->procSize();
