@@ -28,6 +28,7 @@ PartitionModel::PartitionModel()
 {
 	linked_alpha = -1.0;
     opt_gamma_invar = false;
+    MPIHelper::getInstance().setPartitionModel(this);
 }
 
 PartitionModel::PartitionModel(Params &params, PhyloSuperTree *tree, ModelsBlock *models_block)
@@ -157,6 +158,7 @@ PartitionModel::PartitionModel(Params &params, PhyloSuperTree *tree, ModelsBlock
             }
         delete [] sum_state_counts;
     }
+    MPIHelper::getInstance().setPartitionModel(this);
 }
 
 void PartitionModel::setCheckpoint(Checkpoint *checkpoint) {
@@ -295,6 +297,92 @@ double PartitionModel::targetFunk(double x[]) {
     if (tree->part_order.empty()) tree->computePartitionOrder();
 
     if (Params::getInstance().pqmaker) {
+        /*----------------------------------- Run opQMaker here ----------------------------------*/
+        DoubleVector results(tree->size());
+
+        #ifdef _IQTREE_MPI
+        int proc_ntrees = tree->procSize();
+
+        if (Params::getInstance().opqmaker) {
+            proc_ntrees = tree->size();    // run more to prevent from missing any msa
+            tree->proc_part_order.clear(); // clear to take new order
+
+            if (MPIHelper::getInstance().isMaster()) {
+                tree->proc_part_order_2 = tree->part_order;
+                reverse(tree->proc_part_order_2.begin(), tree->proc_part_order_2.end()); // greedy assign: from largest -> smallest
+            }
+        }
+        #endif
+
+        #ifdef _OPENMP
+        #pragma omp parallel for reduction(+: res) schedule(dynamic) if(tree->num_threads > 1)
+        #endif
+        #ifdef _IQTREE_MPI
+            for (int j = 0; j < proc_ntrees; j++) {
+                int i = -1;
+
+                if (!Params::getInstance().opqmaker) {
+                    i = tree->proc_part_order[j];
+                } else {
+                    #ifdef _OPENMP
+                    #pragma omp critical
+                    #endif
+                    i = MPIHelper::getInstance().request();
+                }
+        #else
+            for (int j = 0; j < ntrees; j++) {
+                int i = tree->part_order[j];
+        #endif
+
+            #ifdef _IQTREE_MPI
+                if (i == -1) {
+                    continue; // no tree to process
+                } 
+                
+                if (Params::getInstance().opqmaker) 
+                #ifdef _OPENMP
+                #pragma omp critical
+                #endif
+                {
+                    if (MPIHelper::getInstance().isMaster()) {
+                        while (MPIHelper::getInstance().gotMessage(REQUEST_TAG)) {
+                            MPIHelper::getInstance().responeRequest();
+                        }
+                    }
+                }
+            #endif
+
+                ModelSubst *part_model = tree->at(i)->getModel();
+                if (part_model->getName() != model->getName())
+                    continue;
+                bool fixed = part_model->fixParameters(false);
+                results[i] = part_model->targetFunk(x);
+                part_model->fixParameters(fixed);
+            }
+
+        #ifdef _IQTREE_MPI
+            if (Params::getInstance().opqmaker) { // wait until all process get out from loop
+                if (MPIHelper::getInstance().isMaster()) {
+                    int nonStopWorkers = MPIHelper::getInstance().getNumProcesses() - 1;
+                    while (nonStopWorkers > 0) {
+                        if (MPIHelper::getInstance().gotMessage(STOP_TAG)) {
+                            --nonStopWorkers;
+                            string temp;
+                            MPIHelper::getInstance().recvString(temp, MPI_ANY_SOURCE, STOP_TAG);
+                        } else if (MPIHelper::getInstance().gotMessage(REQUEST_TAG)) {
+                            MPIHelper::getInstance().responeRequest();
+                        }
+                    }
+                } else {
+                    sendStopMessage();
+                }
+            }
+
+            results = MPIHelper::getInstance().sumProcs(results);
+        #endif
+            for (auto e : results) res += e;
+
+    } else if (Params::getInstance().pqmaker) {
         /*----------------------------------- Run pQMaker here ----------------------------------*/
         DoubleVector results(tree->size());
 
@@ -499,10 +587,122 @@ double PartitionModel::optimizeParameters(int fixed_len, bool write_info, double
 
     for (int step = 0; step < Params::getInstance().model_opt_steps; step++) {
         tree_lh = 0.0;
-        if (Params::getInstance().pqmaker) tree_lhs = DoubleVector(ntrees, 0.0);
+        if (Params::getInstance().pqmaker || Params::getInstance().opqmaker) tree_lhs = DoubleVector(ntrees, 0.0);
         if (tree->part_order.empty()) tree->computePartitionOrder();
 
-        if (Params::getInstance().pqmaker) {
+        if (Params::getInstance().opqmaker) {
+            /*--------------------- -------------- Run opQMaker here ----------------------------------*/
+            #ifdef _IQTREE_MPI
+            int proc_ntrees = tree->procSize();
+            proc_ntrees = tree->size(); // run more to prevent from missing any msa
+            tree->proc_part_order.clear(); // clear to take new order
+            
+            if (MPIHelper::getInstance().isMaster()) {
+                tree->proc_part_order_2 = tree->part_order;
+                reverse(tree->proc_part_order_2.begin(), tree->proc_part_order_2.end()); // greedy assign: from largest -> smallest
+            }
+            #endif
+
+                #ifdef _OPENMP
+                #pragma omp parallel for reduction(+: tree_lh) schedule(dynamic) if(tree->num_threads > 1)
+                #endif
+            #ifdef _IQTREE_MPI
+                for (int i = 0; i < proc_ntrees; i++) {
+                    int part = -1;
+                    
+                    if (!Params::getInstance().opqmaker) {
+                        part = tree->proc_part_order[i];
+                    } else {
+                        #ifdef _OPENMP
+                        #pragma omp critical
+                        #endif
+                        part = MPIHelper::getInstance().request();
+                    }
+            #else
+                for (int i = 0; i < ntrees; i++) {
+                    int part = tree->part_order[i];
+            #endif
+
+                #ifdef _IQTREE_MPI
+                    if (part == -1) {
+                        continue; // no tree to process
+                    } 
+                    
+                    if (Params::getInstance().opqmaker) 
+                    #ifdef _OPENMP
+                    #pragma omp critical
+                    #endif
+                    {
+                        tree->proc_part_order.push_back(part);
+
+                        if (MPIHelper::getInstance().isMaster()) {
+                            while (MPIHelper::getInstance().gotMessage(REQUEST_TAG)) {
+                                MPIHelper::getInstance().responeRequest();
+                            }
+                        }
+                    }
+                #endif
+                    double score;
+                    if (opt_gamma_invar) {
+                        score = tree->at(part)->getModelFactory()->optimizeParametersGammaInvar(fixed_len,
+                            write_info && verbose_mode >= VB_MED,
+                            logl_epsilon/min(ntrees,10), gradient_epsilon/min(ntrees,10));
+                    } else {
+                        score = tree->at(part)->getModelFactory()->optimizeParameters(fixed_len,
+                            write_info && verbose_mode >= VB_MED,
+                            logl_epsilon/min(ntrees,10), gradient_epsilon/min(ntrees,10));
+                    }
+
+                    
+                    tree_lhs[part] = score;
+                    //tree_lh += score;
+
+                    // Canh: quick fix
+                    // Currently only alignments processed by master in MPI version are logged
+                    // Remove logging to avoid misunderstanding
+                #ifndef _IQTREE_MPI
+                    if (write_info)
+                    #ifdef _OPENMP
+                    #pragma omp critical
+                    #endif
+                    {
+                        cout << "Partition " << tree->at(part)->aln->name
+                            << " / Model: " << tree->at(part)->getModelName()
+                            << " / df: " << tree->at(part)->getModelFactory()->getNParameters(fixed_len)
+                            << " / LogL: " << score << endl;
+                    }
+                #endif // _IQTREE_MPI
+                }
+
+                    // printf("PROC %d GET OUT FROM LOOP\n", MPIHelper::getInstance().getProcessID());
+
+                    //return ModelFactory::optimizeParameters(fixed_len, write_info);
+
+            #ifdef _IQTREE_MPI
+                if (Params::getInstance().opqmaker) { // wait until all process get out from loop
+                    if (MPIHelper::getInstance().isMaster()) {
+                        int nonStopWorkers = MPIHelper::getInstance().getNumProcesses() - 1;
+                        while (nonStopWorkers > 0) {
+                            if (MPIHelper::getInstance().gotMessage(STOP_TAG)) {
+                                --nonStopWorkers;
+                                string temp;
+                                MPIHelper::getInstance().recvString(temp, MPI_ANY_SOURCE, STOP_TAG);
+                            } else if (MPIHelper::getInstance().gotMessage(REQUEST_TAG)) {
+                                MPIHelper::getInstance().responeRequest();
+                            }
+                        }
+                    } else {
+                        sendStopMessage();
+                    }
+                }
+
+                tree_lhs = MPIHelper::getInstance().sumProcs(tree_lhs);
+                syncBranchLengths();
+            #endif
+                for (auto e : tree_lhs)
+                    tree_lh += e;
+
+        } else if (Params::getInstance().pqmaker) {
             /*----------------------------------- Run pQMaker here ----------------------------------*/
             #ifdef _IQTREE_MPI
             int proc_ntrees = tree->procSize();
@@ -666,5 +866,14 @@ void PartitionModel::syncBranchLengths()
         for (int j = 0; j < nprocs; j++)
             if (!all_blens[ntrees * j + i].empty() && j != MPIHelper::getInstance().getProcessID())
                 tree->at(i)->restoreBranchLengths(all_blens[ntrees * j + i]);
+}
+
+
+void PartitionModel::sendStopMessage() {
+    if (!MPIHelper::getInstance().isWorker()) {
+        return;
+    }
+    string message = "STOP!";
+    MPIHelper::getInstance().sendString(message, PROC_MASTER, STOP_TAG);
 }
 #endif

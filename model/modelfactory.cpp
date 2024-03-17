@@ -41,6 +41,7 @@
 //#include "ngs.h"
 #include <string>
 #include "utils/timeutil.h"
+#include "utils/MPIHelper.h"
 #include "nclextra/myreader.h"
 #include <sstream>
 
@@ -1374,6 +1375,17 @@ double ModelFactory::optimizeParameters(int fixed_len, bool write_info,
     }
     // ---------------------------
 
+#ifdef _IQTREE_MPI
+    if (Params::getInstance().opqmaker && MPIHelper::getInstance().isMaster())
+    #ifdef _OPENMP
+    #pragma omp critical
+    #endif
+    {
+        while (MPIHelper::getInstance().gotMessage(REQUEST_TAG)) {
+            MPIHelper::getInstance().responeRequest();
+        }
+    }
+#endif
 
     int i;
     //bool optimize_rate = true;
@@ -1398,6 +1410,18 @@ double ModelFactory::optimizeParameters(int fixed_len, bool write_info,
             new_lh = cur_lh;
 
         new_lh = optimizeParametersOnly(i, gradient_epsilon, new_lh);
+
+#ifdef _IQTREE_MPI
+    if (Params::getInstance().opqmaker && MPIHelper::getInstance().isMaster())
+    #ifdef _OPENMP
+    #pragma omp critical
+    #endif
+    {
+        while (MPIHelper::getInstance().gotMessage(REQUEST_TAG)) {
+            MPIHelper::getInstance().responeRequest();
+        }
+    }
+#endif
 
         if (new_lh == 0.0) {
             if (fixed_len == BRLEN_OPTIMIZE)

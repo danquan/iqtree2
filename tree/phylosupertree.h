@@ -365,6 +365,7 @@ public:
 #ifdef _IQTREE_MPI
     /* partition ID sorted in descending order of computation cost for this process*/
     IntVector proc_part_order;
+    IntVector proc_part_order_2;
 
     /* number of trees for this process */
     size_t procSize()

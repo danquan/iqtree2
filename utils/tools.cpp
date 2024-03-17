@@ -1522,6 +1522,11 @@ void parseArg(int argc, char *argv[], Params &params) {
                 printCopyright(cout);
                 exit(EXIT_SUCCESS);
             }
+            if (strcmp(argv[cnt], "-opqmaker") == 0 || strcmp(argv[cnt], "--opqmaker") == 0)
+            {
+                params.opqmaker = true;
+                continue;
+            }
             if (strcmp(argv[cnt], "-pqmaker") == 0 || strcmp(argv[cnt],"--pqmaker") == 0) {
                 params.pqmaker = true;
                 continue;

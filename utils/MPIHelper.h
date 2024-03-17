@@ -26,6 +26,7 @@
 #include <vector>
 #include "utils/tools.h"
 #include "utils/checkpoint.h"
+#include "model/partitionmodel.h"
 
 #ifdef _IQTREE_MPI
 #include <mpi.h>
@@ -37,6 +38,8 @@
 #define BOOT_TAG 3 // Message to please send bootstrap trees
 #define BOOT_TREE_TAG 4 // bootstrap tree tag
 #define LOGL_CUTOFF_TAG 5 // send logl_cutoff for ultrafast bootstrap
+#define REQUEST_TAG 6     // send score in MPI QMaker
+#define SUPERTREE_TAG 7   // send tree id in MPI QMaker
 
 using namespace std;
 
@@ -96,7 +99,7 @@ public:
 
     /** @return true if got any message from another process */
     bool gotMessage();
-
+    bool gotMessage(int tag);
 
     /** wrapper for MPI_Send a string
         @param str string to send
@@ -187,7 +190,30 @@ public:
                                 5 5 5 5 5
      */
     vector<DoubleVector> gatherAllVectors(const vector<DoubleVector> &vts);
+
+private:
+    PartitionModel *partitionModel;
+
+public:
+    // New functions for new MPI-QMaker idea: Dynamic Scheduling
+    /**
+     * @return <score, id of assigned tree>
+     */
+    pair<double, int> responeRequest();
+    /**
+     * @return ID of tree, -1 if there's no tree
+     */
+    int request();
+    void schedule(int proc);
+
+
 #endif
+    
+    void setPartitionModel(PartitionModel *partitionModel) {
+        #ifdef _IQTREE_MPI
+            MPIHelper::partitionModel = partitionModel;
+        #endif
+    }
 
     void increaseTreeSent(int inc = 1) {
         numTreeSent += inc;

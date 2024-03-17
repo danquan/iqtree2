@@ -83,13 +83,29 @@ int MPIHelper::countSameHost() {
 }
 
 bool MPIHelper::gotMessage() {
+    if (getNumProcesses() == 1)
+        return false;
+#ifdef _IQTREE_MPI
+    int flag = 0;
+    MPI_Status status;
+    MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_SOURCE, MPI_COMM_WORLD, &flag, &status);
+    if (flag)
+        return true;
+    else
+        return false;
+#else
+    return false;
+#endif
+}
+
+bool MPIHelper::gotMessage(int tag) {
     // Check for incoming messages
     if (getNumProcesses() == 1)
         return false;
 #ifdef _IQTREE_MPI
     int flag = 0;
     MPI_Status status;
-    MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &flag, &status);
+    MPI_Iprobe(MPI_ANY_SOURCE, tag, MPI_COMM_WORLD, &flag, &status);
     if (flag)
         return true;
     else
@@ -293,6 +309,66 @@ vector<DoubleVector> MPIHelper::gatherAllVectors(const vector<DoubleVector> &vts
     }
 
     return res_vts;
+}
+
+pair<double, int> MPIHelper::responeRequest()
+{
+    if (!gotMessage(REQUEST_TAG) || !isMaster())
+        return {0, -1};
+    PhyloSuperTree *stree = (PhyloSuperTree *)partitionModel->site_rate->getTree();
+
+    string message;
+    int sender = recvString(message, MPI_ANY_SOURCE, REQUEST_TAG);
+
+    schedule(sender);
+
+    return {0, -1};
+}
+
+int MPIHelper::request()
+{
+    PhyloSuperTree *stree = (PhyloSuperTree *)(partitionModel->site_rate->getTree());
+    if (isMaster())
+    {
+        if (stree->proc_part_order_2.empty())
+            return -1;
+        int tree = stree->proc_part_order_2.back();
+        stree->proc_part_order_2.pop_back();
+        return tree;
+    }
+    else
+    {
+        // MPI_Send(&partitionModel->prevScore, 1, MPI_DOUBLE, PROC_MASTER, partitionModel->prevTree, MPI_COMM_WORLD);
+        string message = "?";
+        sendString(message, PROC_MASTER, REQUEST_TAG);
+
+        string treePos;
+        // MPI_Recv(&tree, 1, MPI_INT, PROC_MASTER, REQUEST_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        recvString(treePos, PROC_MASTER, SUPERTREE_TAG);
+
+        return stoi(treePos);
+    }
+}
+
+void MPIHelper::schedule(int proc)
+{
+    if (!isMaster())
+        return;
+    PhyloSuperTree *stree = (PhyloSuperTree *)(partitionModel->site_rate->getTree());
+
+    if (stree->proc_part_order_2.empty())
+    {
+        string message = "-1";
+        sendString(message, proc, SUPERTREE_TAG);
+        return;
+    }
+
+    stringstream tree;
+    tree << stree->proc_part_order_2.back();
+    stree->proc_part_order_2.pop_back();
+    string message = tree.str();
+    // MPI_Send(&tree, 1, MPI_INT, proc, SUPERTREE_TAG, MPI_COMM_WORLD);
+    sendString(message, proc, SUPERTREE_TAG);
 }
 
 #endif

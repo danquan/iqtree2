@@ -612,6 +612,11 @@ private:
 public:
 
     /**
+     * Dynamic parallel for QMaker
+    */
+    bool opqmaker;
+
+    /**
      * Parallel for QMaker
     */
     bool pqmaker;
