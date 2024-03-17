@@ -671,7 +671,9 @@ void PhyloSuperTree::computePartitionOrder() {
         part_order[i] = id[i];
 
 #ifdef _IQTREE_MPI
-	computeProcPartitionOrder(cost);
+	if (Params::getInstance().pqmaker) {
+		computeProcPartitionOrder(cost);
+	}
 #endif
 
 	// compute part_order by number of patterns
