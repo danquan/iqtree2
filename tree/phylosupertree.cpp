@@ -704,6 +704,35 @@ void PhyloSuperTree::computePartitionOrder() {
 #endif // OPENMP and MPI
 }
 
+void PhyloSuperTree::computePartitionOrderTF() {
+    if (!part_order.empty())
+        return;
+    int i, ntrees = size();
+    part_order_tf.resize(ntrees);
+#if defined(_OPENMP) || defined(_IQTREE_MPI)
+	int *id = new int[ntrees];
+    double *cost = new double[ntrees];
+    
+    for (i = 0; i < ntrees; i++) {
+        cost[i] = part_cost[i];
+        id[i] = i;
+    }
+    quicksort(cost, 0, ntrees-1, id);
+    for (i = 0; i < ntrees; i++) 
+        part_order_tf[i] = id[i];
+
+#ifdef _IQTREE_MPI
+	if (Params::getInstance().pqmaker) {
+		computeProcPartitionOrderTF(cost);
+	}
+#endif
+#else
+    for (i = 0; i < ntrees; i++) {
+        part_order_tf[i] = i;
+    }
+#endif // OPENMP and MPI
+}
+
 #ifdef _IQTREE_MPI
 void PhyloSuperTree::computeProcPartitionOrder(double *cost)
 {
@@ -733,6 +762,38 @@ void PhyloSuperTree::computeProcPartitionOrder(double *cost)
 		}
 	}
 	proc_part_order = MPIHelper::getInstance().getProcVector(proc_parts);
+}
+#endif
+
+#ifdef _IQTREE_MPI
+void PhyloSuperTree::computeProcPartitionOrderTF(double *cost)
+{
+	int ntrees = size();
+	int nprocs = MPIHelper::getInstance().getNumProcesses();
+
+	vector<IntVector> proc_parts(nprocs);
+
+	if (MPIHelper::getInstance().isMaster())
+	{
+		priority_queue<DoubleIntPair, vector<DoubleIntPair>, less<DoubleIntPair>> pq;
+		for (int i = 0; i < nprocs; i++)
+		{
+			pq.push(make_pair(0.0, i));
+		}
+
+		for (int i = 0; i < ntrees; i++)
+		{
+			double proc_cost = pq.top().first;
+			int proc_id = pq.top().second;
+			pq.pop();
+
+			proc_parts[proc_id].push_back(part_order_tf[i]);
+			proc_cost += cost[i];
+
+			pq.push(make_pair(proc_cost, proc_id));
+		}
+	}
+	proc_part_order_tf = MPIHelper::getInstance().getProcVector(proc_parts);
 }
 #endif
 

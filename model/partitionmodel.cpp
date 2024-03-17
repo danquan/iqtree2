@@ -287,40 +287,58 @@ int PartitionModel::getNDim() {
     return model->getNDim();
 }
 
+int countTF = 0;
 double PartitionModel::targetFunk(double x[]) {
+    ++countTF;
     PhyloSuperTree *tree = (PhyloSuperTree*)site_rate->getTree();
+
+    tree->part_cost.clear();
+    tree->part_cost.resize(tree->size(), 0.0);
     
     double res = 0;
     int ntrees = tree->size();
-    if (tree->part_order.empty()) tree->computePartitionOrder();
+    if (countTF == 1) tree->proc_part_order_tf = tree->proc_part_order;
+    else if (countTF <= 10) tree->computePartitionOrderTF();
 
     if (Params::getInstance().pqmaker) {
         /*----------------------------------- Run pQMaker here ----------------------------------*/
         DoubleVector results(tree->size());
+        DoubleVector times(tree->size());
 
         #ifdef _OPENMP
         #pragma omp parallel for reduction(+ : res) schedule(dynamic) if (tree->num_threads > 1)
         #endif
         #ifdef _IQTREE_MPI
             for (int j = 0; j < tree->procSize(); j++) {
-                int i = tree->proc_part_order[j];
+                int i = tree->proc_part_order_tf[j];
         #else
             for (int j = 0; j < tree->size(); j++) {
-                int i = tree->part_order[j];
+                int i = tree->part_order_tf[j];
         #endif
+
+                clock_t startTime = clock();
+
                 ModelSubst *part_model = tree->at(i)->getModel();
                 if (part_model->getName() != model->getName())
                     continue;
                 bool fixed = part_model->fixParameters(false);
                 results[i] = part_model->targetFunk(x);
                 part_model->fixParameters(fixed);
+
+                clock_t endTime = clock();
+                times[i] = (double)(endTime - startTime) / CLOCKS_PER_SEC;
             }
 
         #ifdef _IQTREE_MPI
             results = MPIHelper::getInstance().sumProcs(results);
+            if (countTF < 10) times = MPIHelper::getInstance().sumProcs(times);
         #endif
             for (auto e : results)
-             res += e;
+                res += e;
+            if (countTF < 10) {
+                for (int i = 0; i < tree->size(); i++)
+                    tree->part_cost[i] += times[i];
+            }
 
     } else {
         /*----------------------------------- Run QMaker here ----------------------------------*/
@@ -599,6 +617,8 @@ double PartitionModel::optimizeParameters(int fixed_len, bool write_info, double
 
         // optimize linked models
         if (!linked_models.empty()) {
+            countTF = 0;
+
             double new_tree_lh = optimizeLinkedModels(write_info, gradient_epsilon);
             ASSERT(new_tree_lh > tree_lh - 0.1);
             tree_lh = new_tree_lh;

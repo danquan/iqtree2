@@ -360,11 +360,14 @@ public:
 
     /* partition ID sorted in descending order of computation cost */
     IntVector part_order;
+    IntVector part_order_tf;
     IntVector part_order_by_nptn;
 
 #ifdef _IQTREE_MPI
     /* partition ID sorted in descending order of computation cost for this process*/
     IntVector proc_part_order;
+    IntVector proc_part_order_tf;
+    DoubleVector part_cost;
 
     /* number of trees for this process */
     size_t procSize()
@@ -375,6 +378,9 @@ public:
 
     /* compute part_order vector */
     void computePartitionOrder();
+
+    /* compute part_order vector for Target Funk */
+    void computePartitionOrderTF();
 
     /**
             get the name of the model
@@ -495,6 +501,7 @@ public:
 private:
 #ifdef _IQTREE_MPI
     void computeProcPartitionOrder(double *);
+    void computeProcPartitionOrderTF(double *);
 #endif
 };
 
