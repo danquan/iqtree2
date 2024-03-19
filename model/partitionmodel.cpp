@@ -295,22 +295,22 @@ double PartitionModel::targetFunk(double x[]) {
     if (tree->part_order.empty()) tree->computePartitionOrder();
 
     if (Params::getInstance().fpqmaker) {
-        DoubleVector results(tree->size());
-        if (MPIHelper::getInstance().isMaster()) {
-            *(tree->curPart) = 0;
-        }
         MPI_Barrier(MPI_COMM_WORLD);
         
+        DoubleVector results(tree->size());        
 //        #ifdef _OPENMP
 //        #pragma omp parallel for reduction(+ : res) schedule(dynamic) if (tree->num_threads > 1)
 //        #endif
         while (true) {
-            int i;
-            MPI_Win_lock(MPI_LOCK_EXCLUSIVE, 0, 0, MPIHelper::getInstance().shmwin);
-            if ((*tree->curPart) == ntrees) i = -1;
-            else i = tree->part_order[(*tree->curPart)++];
-            MPI_Win_unlock(0, MPIHelper::getInstance().shmwin);
-            if (i == -1) break;
+            printf("Process %d is free\n", MPIHelper::getInstance().getProcessID());
+            int i = MPIHelper::getInstance().getTask();
+            printf("Process %d is leaving, task %d\n", MPIHelper::getInstance().getProcessID(), i);
+            // sleep(1+MPIHelper::getInstance().getProcessID());
+            if (i >= ntrees) {
+                printf("Process %d terminated\n", MPIHelper::getInstance().getProcessID());
+                break;
+            }
+            i = tree->part_order[i];
             ModelSubst *part_model = tree->at(i)->getModel();
             if (part_model->getName() != model->getName())
                 continue;
@@ -318,7 +318,12 @@ double PartitionModel::targetFunk(double x[]) {
             results[i] = part_model->targetFunk(x);
             part_model->fixParameters(fixed);
         }
-
+        MPI_Barrier(MPI_COMM_WORLD);
+        
+        if (MPIHelper::getInstance().isMaster()) {
+            MPIHelper::getInstance().setTask(- ntrees - MPIHelper::getInstance().getNumProcesses());
+        }
+        MPI_Barrier(MPI_COMM_WORLD);
         #ifdef _IQTREE_MPI
             results = MPIHelper::getInstance().sumProcs(results);
         #endif
@@ -531,7 +536,7 @@ double PartitionModel::optimizeParameters(int fixed_len, bool write_info, double
         if (Params::getInstance().pqmaker || Params::getInstance().fpqmaker) tree_lhs = DoubleVector(ntrees, 0.0);
         if (tree->part_order.empty()) tree->computePartitionOrder();
 
-        if (Params::getInstance().fpqmaker) {
+        /* if (!Params::getInstance().fpqmaker) {
             if (MPIHelper::getInstance().isMaster()) {
                 *(tree->curPart) = 0;
             }
@@ -586,7 +591,8 @@ double PartitionModel::optimizeParameters(int fixed_len, bool write_info, double
         #endif
             for (auto e: tree_lhs)
                 tree_lh += e;
-        } else if (Params::getInstance().pqmaker) {
+        } else */
+        if (Params::getInstance().pqmaker) {
             /*----------------------------------- Run pQMaker here ----------------------------------*/
             #ifdef _IQTREE_MPI
             int proc_ntrees = tree->procSize();
@@ -670,7 +676,7 @@ double PartitionModel::optimizeParameters(int fixed_len, bool write_info, double
             }
             //return ModelFactory::optimizeParameters(fixed_len, write_info);
         }
-
+        MPI_Barrier(MPI_COMM_WORLD);
         if (!isLinkedModel())
             break;
 

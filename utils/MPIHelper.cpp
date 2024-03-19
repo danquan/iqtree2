@@ -31,11 +31,41 @@ void MPIHelper::init(int argc, char *argv[]) {
     setNumTreeReceived(0);
     setNumTreeSent(0);
     setNumNNISearch(0);
+
+    if (task_id == 0) {
+        MPI_Alloc_mem(sizeof(int), MPI_INFO_NULL, &shared_counter);
+        *shared_counter = 0;
+        MPI_Win_create(shared_counter, sizeof(int), sizeof(int), MPI_INFO_NULL, MPI_COMM_WORLD, &shmwin);    
+    } else {
+        MPI_Win_create(NULL, 0, 1, MPI_INFO_NULL, MPI_COMM_WORLD, &shmwin);
+    }
+#endif
+}
+
+int MPIHelper::getTask() {
+#ifdef _IQTREE_MPI
+    int one = 1, id;
+    MPI_Win_lock(MPI_LOCK_EXCLUSIVE, 0, 0, shmwin);
+    MPI_Fetch_and_op(&one, &id, MPI_INT, 0, 0, MPI_SUM, shmwin);
+    MPI_Win_unlock(0, shmwin);
+    return id;
+#endif
+}
+
+void MPIHelper::setTask(int delta) {
+#ifdef _IQTREE_MPI
+    MPI_Win_lock(MPI_LOCK_EXCLUSIVE, 0, 0, shmwin);
+    MPI_Accumulate(&delta, 1, MPI_INT, 0, 0, 1, MPI_INT, MPI_SUM, shmwin);
+    MPI_Win_unlock(0, shmwin);
 #endif
 }
 
 void MPIHelper::finalize() {
 #ifdef _IQTREE_MPI
+    MPI_Win_free(&shmwin);
+    if (isMaster()) {
+        MPI_Free_mem(shared_counter); // Free the allocated memory for the counter
+    }
     MPI_Finalize();
 #endif
 }
@@ -293,30 +323,6 @@ vector<DoubleVector> MPIHelper::gatherAllVectors(const vector<DoubleVector> &vts
     }
 
     return res_vts;
-}
-
-int* MPIHelper::createSharedMemory(int *shmbuf) {
-    MPI_Comm_split_type(MPI_COMM_WORLD, MPI_COMM_TYPE_SHARED, 0, MPI_INFO_NULL, &shmcomm);
-
-    int shm_rank, shm_size;
-    MPI_Comm_rank(shmcomm, &shm_rank);
-    MPI_Comm_size(shmcomm, &shm_size);
-    if (shm_rank == 0) {
-        MPI_Win_allocate_shared(sizeof(int), sizeof(int), MPI_INFO_NULL, shmcomm, &shmbuf, &shmwin);
-        *shmbuf = 0;
-    } else {
-        int disp_unit;
-        MPI_Aint ssize;
-        MPI_Win_allocate_shared(0, sizeof(int), MPI_INFO_NULL, shmcomm, &shmbuf, &shmwin);
-        MPI_Win_shared_query(shmwin, 0, &ssize, &disp_unit, &shmbuf);
-    }
-    MPI_Barrier(MPI_COMM_WORLD);
-    return shmbuf;
-}
-
-void MPIHelper::deleteSharedMemory() {
-    MPI_Win_free(&shmwin);
-    MPI_Comm_free(&shmcomm);
 }
 
 #endif

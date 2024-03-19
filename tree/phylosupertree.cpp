@@ -671,9 +671,7 @@ void PhyloSuperTree::computePartitionOrder() {
         part_order[i] = id[i];
 
 #ifdef _IQTREE_MPI
-	if (Params::getInstance().fpqmaker) {
-		curPart = MPIHelper::getInstance().createSharedMemory(curPart);
-	} else if (Params::getInstance().pqmaker) {
+	if (Params::getInstance().pqmaker) {
 		computeProcPartitionOrder(cost);
 	}
 #endif

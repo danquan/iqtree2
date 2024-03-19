@@ -234,12 +234,10 @@ public:
 //        numTreeReceived = 0;
 //        numNNISearch = 0;
     }
-
-    int* createSharedMemory(int *shmbuf);
-    void deleteSharedMemory();
-    MPI_Comm shmcomm;
+    int *shared_counter;
     MPI_Win shmwin;
-
+    int getTask();
+    void setTask(int delta);
 private:
     int numTreeSent;
 
