@@ -32,13 +32,7 @@ void MPIHelper::init(int argc, char *argv[]) {
     setNumTreeSent(0);
     setNumNNISearch(0);
 
-    if (task_id == 0) {
-        MPI_Alloc_mem(sizeof(int), MPI_INFO_NULL, &shared_counter);
-        *shared_counter = 0;
-        MPI_Win_create(shared_counter, sizeof(int), sizeof(int), MPI_INFO_NULL, MPI_COMM_WORLD, &shmwin);    
-    } else {
-        MPI_Win_create(NULL, 0, 1, MPI_INFO_NULL, MPI_COMM_WORLD, &shmwin);
-    }
+    MPI_Win_allocate(sizeof(int), sizeof(int), MPI_INFO_NULL, MPI_COMM_WORLD, &shared_counter, &shmwin);
 #endif
 }
 

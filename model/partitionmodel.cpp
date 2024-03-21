@@ -302,12 +302,8 @@ double PartitionModel::targetFunk(double x[]) {
 //        #pragma omp parallel for reduction(+ : res) schedule(dynamic) if (tree->num_threads > 1)
 //        #endif
         while (true) {
-            printf("Process %d is free\n", MPIHelper::getInstance().getProcessID());
             int i = MPIHelper::getInstance().getTask();
-            printf("Process %d is leaving, task %d\n", MPIHelper::getInstance().getProcessID(), i);
-            // sleep(1+MPIHelper::getInstance().getProcessID());
             if (i >= ntrees) {
-                printf("Process %d terminated\n", MPIHelper::getInstance().getProcessID());
                 break;
             }
             i = tree->part_order[i];
@@ -319,7 +315,6 @@ double PartitionModel::targetFunk(double x[]) {
             part_model->fixParameters(fixed);
         }
         MPI_Barrier(MPI_COMM_WORLD);
-        
         if (MPIHelper::getInstance().isMaster()) {
             MPIHelper::getInstance().setTask(- ntrees - MPIHelper::getInstance().getNumProcesses());
         }
