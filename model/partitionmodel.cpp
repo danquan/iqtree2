@@ -296,7 +296,7 @@ double PartitionModel::targetFunk(double x[]) {
     int ntrees = tree->size();
     if (tree->part_order.empty()) tree->computePartitionOrder();
 
-    if (Params::getInstance().pqmaker) {
+    if (Params::getInstance().opqmaker) {
         /*----------------------------------- Run opQMaker here ----------------------------------*/
         DoubleVector results(tree->size());
 
@@ -361,21 +361,19 @@ double PartitionModel::targetFunk(double x[]) {
             }
 
         #ifdef _IQTREE_MPI
-            if (Params::getInstance().opqmaker) { // wait until all process get out from loop
-                if (MPIHelper::getInstance().isMaster()) {
-                    int nonStopWorkers = MPIHelper::getInstance().getNumProcesses() - 1;
-                    while (nonStopWorkers > 0) {
-                        if (MPIHelper::getInstance().gotMessage(STOP_TAG)) {
-                            --nonStopWorkers;
-                            string temp;
-                            MPIHelper::getInstance().recvString(temp, MPI_ANY_SOURCE, STOP_TAG);
-                        } else if (MPIHelper::getInstance().gotMessage(REQUEST_TAG)) {
-                            MPIHelper::getInstance().responeRequest();
-                        }
+            if (MPIHelper::getInstance().isMaster()) { // wait until all process get out from loop
+                int nonStopWorkers = MPIHelper::getInstance().getNumProcesses() - 1;
+                while (nonStopWorkers > 0) {
+                    if (MPIHelper::getInstance().gotMessage(STOP_TAG)) {
+                        --nonStopWorkers;
+                        string temp;
+                        MPIHelper::getInstance().recvString(temp, MPI_ANY_SOURCE, STOP_TAG);
+                    } else if (MPIHelper::getInstance().gotMessage(REQUEST_TAG)) {
+                        MPIHelper::getInstance().responeRequest();
                     }
-                } else {
-                    sendStopMessage();
                 }
+            } else {
+                sendStopMessage();
             }
 
             results = MPIHelper::getInstance().sumProcs(results);
@@ -674,26 +672,20 @@ double PartitionModel::optimizeParameters(int fixed_len, bool write_info, double
                 #endif // _IQTREE_MPI
                 }
 
-                    // printf("PROC %d GET OUT FROM LOOP\n", MPIHelper::getInstance().getProcessID());
-
-                    //return ModelFactory::optimizeParameters(fixed_len, write_info);
-
             #ifdef _IQTREE_MPI
-                if (Params::getInstance().opqmaker) { // wait until all process get out from loop
-                    if (MPIHelper::getInstance().isMaster()) {
-                        int nonStopWorkers = MPIHelper::getInstance().getNumProcesses() - 1;
-                        while (nonStopWorkers > 0) {
-                            if (MPIHelper::getInstance().gotMessage(STOP_TAG)) {
-                                --nonStopWorkers;
-                                string temp;
-                                MPIHelper::getInstance().recvString(temp, MPI_ANY_SOURCE, STOP_TAG);
-                            } else if (MPIHelper::getInstance().gotMessage(REQUEST_TAG)) {
-                                MPIHelper::getInstance().responeRequest();
-                            }
+                if (MPIHelper::getInstance().isMaster()) { // wait until all process get out from loop
+                    int nonStopWorkers = MPIHelper::getInstance().getNumProcesses() - 1;
+                    while (nonStopWorkers > 0) {
+                        if (MPIHelper::getInstance().gotMessage(STOP_TAG)) {
+                            --nonStopWorkers;
+                            string temp;
+                            MPIHelper::getInstance().recvString(temp, MPI_ANY_SOURCE, STOP_TAG);
+                        } else if (MPIHelper::getInstance().gotMessage(REQUEST_TAG)) {
+                            MPIHelper::getInstance().responeRequest();
                         }
-                    } else {
-                        sendStopMessage();
                     }
+                } else {
+                    sendStopMessage();
                 }
 
                 tree_lhs = MPIHelper::getInstance().sumProcs(tree_lhs);
