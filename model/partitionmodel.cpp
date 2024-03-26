@@ -537,10 +537,10 @@ double PartitionModel::optimizeParameters(int fixed_len, bool write_info, double
         if (Params::getInstance().pqmaker || Params::getInstance().fpqmaker) tree_lhs = DoubleVector(ntrees, 0.0);
         if (tree->part_order.empty()) tree->computePartitionOrder();
 
-        if (!Params::getInstance().fpqmaker) {
-            if (MPIHelper::getInstance().isMaster()) {
-                *(tree->curPart) = 0;
-            }
+        if (Params::getInstance().fpqmaker) {
+            // if (MPIHelper::getInstance().isMaster()) {
+            //     *(tree->curPart) = 0;
+            // }
             MPI_Barrier(MPI_COMM_WORLD);
     #ifdef _OPENMP
     #pragma omp parallel for reduction(+: tree_lh) schedule(dynamic) if(tree->num_threads > 1)
@@ -552,8 +552,9 @@ double PartitionModel::optimizeParameters(int fixed_len, bool write_info, double
                     part = MPIHelper::getInstance().getTask();
                 }
 
-                if (part == -1) continue;
+                if (part >= ntrees) continue;
                 tree->proc_part_order.push_back(part);
+                printf("Process %d: Partition %d\n", MPIHelper::getInstance().getProcessID(), part);
                 
                 double score;
                 
@@ -571,23 +572,27 @@ double PartitionModel::optimizeParameters(int fixed_len, bool write_info, double
                 // Canh: quick fix
                 // Currently only alignments processed by master in MPI version are logged
                 // Remove logging to avoid misunderstanding
-                #ifndef _IQTREE_MPI
-                    if (write_info)
-                    #ifdef _OPENMP
-                    #pragma omp critical
-                    #endif
-                    {
-                        cout << "Partition " << tree->at(part)->aln->name
-                            << " / Model: " << tree->at(part)->getModelName()
-                            << " / df: " << tree->at(part)->getModelFactory()->getNParameters(fixed_len)
-                            << " / LogL: " << score << endl;
-                    }
-                #endif // _IQTREE_MPI
+                // #ifndef _IQTREE_MPI
+                //     if (write_info)
+                //     #ifdef _OPENMP
+                //     #pragma omp critical
+                //     #endif
+                //     {
+                //         cout << "Partition " << tree->at(part)->aln->name
+                //             << " / Model: " << tree->at(part)->getModelName()
+                //             << " / df: " << tree->at(part)->getModelFactory()->getNParameters(fixed_len)
+                //             << " / LogL: " << score << endl;
+                //     }
+                // #endif // _IQTREE_MPI
             }
 
+            MPI_Barrier(MPI_COMM_WORLD);
+            
             if (MPIHelper::getInstance().isMaster()) {
                 MPIHelper::getInstance().setTask(- ntrees * MPIHelper::getInstance().getNumProcesses());
             }
+
+            MPI_Barrier(MPI_COMM_WORLD);
 
         //return ModelFactory::optimizeParameters(fixed_len, write_info);
         #ifdef _IQTREE_MPI
