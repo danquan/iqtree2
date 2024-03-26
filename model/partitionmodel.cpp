@@ -298,13 +298,19 @@ double PartitionModel::targetFunk(double x[]) {
         MPI_Barrier(MPI_COMM_WORLD);
         
         DoubleVector results(tree->size());        
-//        #ifdef _OPENMP
-//        #pragma omp parallel for reduction(+ : res) schedule(dynamic) if (tree->num_threads > 1)
-//        #endif
-        while (true) {
-            int i = MPIHelper::getInstance().getTask();
+#ifdef _OPENMP
+#pragma omp parallel for reduction(+ : res) schedule(dynamic) if (tree->num_threads > 1)
+#endif
+        for (int j = 0; j < ntrees; ++j) {
+            int i;
+            #pragma omp critical
+            {
+                i = MPIHelper::getInstance().getTask();
+            }
+
+            // printf("Process %d: Partition %d\n", MPIHelper::getInstance().getProcessID(), i);
             if (i >= ntrees) {
-                break;
+                continue;
             }
             i = tree->part_order[i];
             ModelSubst *part_model = tree->at(i)->getModel();
@@ -316,7 +322,7 @@ double PartitionModel::targetFunk(double x[]) {
         }
         MPI_Barrier(MPI_COMM_WORLD);
         if (MPIHelper::getInstance().isMaster()) {
-            MPIHelper::getInstance().setTask(- ntrees - MPIHelper::getInstance().getNumProcesses());
+            MPIHelper::getInstance().setTask(- ntrees * MPIHelper::getInstance().getNumProcesses());
         }
         MPI_Barrier(MPI_COMM_WORLD);
         #ifdef _IQTREE_MPI
