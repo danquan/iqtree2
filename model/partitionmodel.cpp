@@ -537,21 +537,22 @@ double PartitionModel::optimizeParameters(int fixed_len, bool write_info, double
         if (Params::getInstance().pqmaker || Params::getInstance().fpqmaker) tree_lhs = DoubleVector(ntrees, 0.0);
         if (tree->part_order.empty()) tree->computePartitionOrder();
 
-        /* if (!Params::getInstance().fpqmaker) {
+        if (!Params::getInstance().fpqmaker) {
             if (MPIHelper::getInstance().isMaster()) {
                 *(tree->curPart) = 0;
             }
             MPI_Barrier(MPI_COMM_WORLD);
-//            #ifdef _OPENMP
-//            #pragma omp parallel for reduction(+: tree_lh) schedule(dynamic) if(tree->num_threads > 1)
-//            #endif
-            while (true) {
+    #ifdef _OPENMP
+    #pragma omp parallel for reduction(+: tree_lh) schedule(dynamic) if(tree->num_threads > 1)
+    #endif
+            for (int j = 0; j < ntrees; ++j) {
                 int part;
-                MPI_Win_lock(MPI_LOCK_EXCLUSIVE, 0, 0, MPIHelper::getInstance().shmwin);
-                if ((*tree->curPart) == ntrees) part = -1;
-                else part = tree->part_order[(*tree->curPart)++];
-                MPI_Win_unlock(0, MPIHelper::getInstance().shmwin);
-                if (part == -1) break;
+                #pragma omp critical
+                {
+                    part = MPIHelper::getInstance().getTask();
+                }
+
+                if (part == -1) continue;
                 tree->proc_part_order.push_back(part);
                 
                 double score;
@@ -584,6 +585,10 @@ double PartitionModel::optimizeParameters(int fixed_len, bool write_info, double
                 #endif // _IQTREE_MPI
             }
 
+            if (MPIHelper::getInstance().isMaster()) {
+                MPIHelper::getInstance().setTask(- ntrees * MPIHelper::getInstance().getNumProcesses());
+            }
+
         //return ModelFactory::optimizeParameters(fixed_len, write_info);
         #ifdef _IQTREE_MPI
             tree_lhs = MPIHelper::getInstance().sumProcs(tree_lhs);
@@ -592,7 +597,7 @@ double PartitionModel::optimizeParameters(int fixed_len, bool write_info, double
         #endif
             for (auto e: tree_lhs)
                 tree_lh += e;
-        } else */
+        } else 
         if (Params::getInstance().pqmaker) {
             /*----------------------------------- Run pQMaker here ----------------------------------*/
             #ifdef _IQTREE_MPI
