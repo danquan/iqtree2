@@ -295,30 +295,32 @@ double PartitionModel::targetFunk(double x[]) {
     if (tree->part_order.empty()) tree->computePartitionOrder();
 
     if (Params::getInstance().fpqmaker) {
-        MPI_Barrier(MPI_COMM_WORLD);
         
         DoubleVector results(tree->size());        
-#ifdef _OPENMP
-#pragma omp parallel for reduction(+ : res) schedule(dynamic) if (tree->num_threads > 1)
-#endif
-        for (int j = 0; j < ntrees; ++j) {
-            int i;
-            #pragma omp critical
-            {
-                i = MPIHelper::getInstance().getTask();
-            }
 
-            // printf("Process %d: Partition %d\n", MPIHelper::getInstance().getProcessID(), i);
-            if (i >= ntrees) {
-                continue;
+        while (true) {
+            vector<int> tasks;
+            bool alive = false;
+            for (int j = 0; j < MPIHelper::getInstance().getNumProcesses(); ++j) {
+                int i = MPIHelper::getInstance().getTask();
+                if (i >= ntrees) break;
+                tasks.push_back(tree->part_order[i]);
+                alive = true;
             }
-            i = tree->part_order[i];
-            ModelSubst *part_model = tree->at(i)->getModel();
-            if (part_model->getName() != model->getName())
-                continue;
-            bool fixed = part_model->fixParameters(false);
-            results[i] = part_model->targetFunk(x);
-            part_model->fixParameters(fixed);
+            if (!alive) break;
+            
+            #ifdef _OPENMP
+            #pragma omp parallel for reduction(+ : res) schedule(dynamic) if (tree->num_threads > 1)
+            #endif
+            for (int id = 0; id < tasks.size(); ++id) {
+                int i = tasks[id];
+                ModelSubst *part_model = tree->at(i)->getModel();
+                if (part_model->getName() != model->getName())
+                    continue;
+                bool fixed = part_model->fixParameters(false);
+                results[i] = part_model->targetFunk(x);
+                part_model->fixParameters(fixed);
+            }
         }
         MPI_Barrier(MPI_COMM_WORLD);
         if (MPIHelper::getInstance().isMaster()) {
@@ -537,11 +539,7 @@ double PartitionModel::optimizeParameters(int fixed_len, bool write_info, double
         if (Params::getInstance().pqmaker || Params::getInstance().fpqmaker) tree_lhs = DoubleVector(ntrees, 0.0);
         if (tree->part_order.empty()) tree->computePartitionOrder();
 
-        if (Params::getInstance().fpqmaker) {
-            // if (MPIHelper::getInstance().isMaster()) {
-            //     *(tree->curPart) = 0;
-            // }
-            MPI_Barrier(MPI_COMM_WORLD);
+        if (false && Params::getInstance().fpqmaker) {
     #ifdef _OPENMP
     #pragma omp parallel for reduction(+: tree_lh) schedule(dynamic) if(tree->num_threads > 1)
     #endif

@@ -33,6 +33,10 @@ void MPIHelper::init(int argc, char *argv[]) {
     setNumNNISearch(0);
 
     MPI_Win_allocate(sizeof(int), sizeof(int), MPI_INFO_NULL, MPI_COMM_WORLD, &shared_counter, &shmwin);
+    if (isMaster()) {
+        *shared_counter = 0;
+    }
+    MPI_Barrier(MPI_COMM_WORLD);
 #endif
 }
 
@@ -57,9 +61,7 @@ void MPIHelper::setTask(int delta) {
 void MPIHelper::finalize() {
 #ifdef _IQTREE_MPI
     MPI_Win_free(&shmwin);
-    if (isMaster()) {
-        MPI_Free_mem(shared_counter); // Free the allocated memory for the counter
-    }
+    // MPI_Free_mem(shared_counter); // Free the allocated memory for the counter
     MPI_Finalize();
 #endif
 }
