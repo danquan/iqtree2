@@ -295,19 +295,17 @@ double PartitionModel::targetFunk(double x[]) {
     if (tree->part_order.empty()) tree->computePartitionOrder();
 
     if (Params::getInstance().fpqmaker) {
-        
         DoubleVector results(tree->size());        
 
         while (true) {
             vector<int> tasks;
-            bool alive = false;
             for (int j = 0; j < MPIHelper::getInstance().getNumProcesses(); ++j) {
                 int i = MPIHelper::getInstance().getTask();
-                if (i >= ntrees) break;
+                if (i >= ntrees) {
+                    break;
+                }
                 tasks.push_back(tree->part_order[i]);
-                alive = true;
             }
-            if (!alive) break;
             
             #ifdef _OPENMP
             #pragma omp parallel for reduction(+ : res) schedule(dynamic) if (tree->num_threads > 1)
@@ -321,10 +319,11 @@ double PartitionModel::targetFunk(double x[]) {
                 results[i] = part_model->targetFunk(x);
                 part_model->fixParameters(fixed);
             }
+            if (tasks.size() < MPIHelper::getInstance().getNumProcesses()) break;
         }
         MPI_Barrier(MPI_COMM_WORLD);
         if (MPIHelper::getInstance().isMaster()) {
-            MPIHelper::getInstance().setTask(- ntrees * MPIHelper::getInstance().getNumProcesses());
+            MPIHelper::getInstance().setTask(- ntrees - MPIHelper::getInstance().getNumProcesses());
         }
         MPI_Barrier(MPI_COMM_WORLD);
         #ifdef _IQTREE_MPI
