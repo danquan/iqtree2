@@ -296,10 +296,10 @@ double PartitionModel::targetFunk(double x[]) {
 
     if (Params::getInstance().fpqmaker) {
         DoubleVector results(tree->size());        
-
+        // clock_t start = clock();
         while (true) {
             vector<int> tasks;
-            for (int j = 0; j < MPIHelper::getInstance().getNumProcesses(); ++j) {
+            for (int j = 0; j < Params::getInstance().num_threads; ++j) {
                 int i = MPIHelper::getInstance().getTask();
                 if (i >= ntrees) {
                     break;
@@ -319,8 +319,10 @@ double PartitionModel::targetFunk(double x[]) {
                 results[i] = part_model->targetFunk(x);
                 part_model->fixParameters(fixed);
             }
-            if (tasks.size() < MPIHelper::getInstance().getNumProcesses()) break;
+            if (tasks.size() < Params::getInstance().num_threads) break;
         }
+        // clock_t end = clock();
+        // printf("Process %d time: %f\n", MPIHelper::getInstance().getProcessID(), (double)(end - start) / CLOCKS_PER_SEC);
         MPI_Barrier(MPI_COMM_WORLD);
         if (MPIHelper::getInstance().isMaster()) {
             MPIHelper::getInstance().setTask(- ntrees - MPIHelper::getInstance().getNumProcesses());
