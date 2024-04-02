@@ -61,7 +61,6 @@ void MPIHelper::setTask(int delta) {
 void MPIHelper::finalize() {
 #ifdef _IQTREE_MPI
     MPI_Win_free(&shmwin);
-    // MPI_Free_mem(shared_counter); // Free the allocated memory for the counter
     MPI_Finalize();
 #endif
 }

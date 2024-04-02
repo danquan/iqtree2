@@ -297,35 +297,31 @@ double PartitionModel::targetFunk(double x[]) {
     if (Params::getInstance().fpqmaker) {
         DoubleVector results(tree->size());        
         // clock_t start = clock();
-        while (true) {
-            vector<int> tasks;
-            for (int j = 0; j < Params::getInstance().num_threads; ++j) {
-                int i = MPIHelper::getInstance().getTask();
+        
+        #ifdef _OPENMP
+        #pragma omp parallel if (tree->num_threads > 1)
+        #endif
+        {
+            while (true) {
+                int i;
+                #pragma omp critical
+                i = MPIHelper::getInstance().getTask();
+            
                 if (i >= ntrees) {
                     break;
                 }
-                tasks.push_back(tree->part_order[i]);
-            }
-            
-            #ifdef _OPENMP
-            #pragma omp parallel for reduction(+ : res) schedule(dynamic) if (tree->num_threads > 1)
-            #endif
-            for (int id = 0; id < tasks.size(); ++id) {
-                int i = tasks[id];
+                i = tree->part_order[i];
                 ModelSubst *part_model = tree->at(i)->getModel();
                 if (part_model->getName() != model->getName())
                     continue;
                 bool fixed = part_model->fixParameters(false);
                 results[i] = part_model->targetFunk(x);
-                part_model->fixParameters(fixed);
+                part_model->fixParameters(fixed);    
             }
-            if (tasks.size() < Params::getInstance().num_threads) break;
         }
-        // clock_t end = clock();
-        // printf("Process %d time: %f\n", MPIHelper::getInstance().getProcessID(), (double)(end - start) / CLOCKS_PER_SEC);
         MPI_Barrier(MPI_COMM_WORLD);
         if (MPIHelper::getInstance().isMaster()) {
-            MPIHelper::getInstance().setTask(- ntrees - MPIHelper::getInstance().getNumProcesses());
+            MPIHelper::getInstance().setTask(- ntrees - MPIHelper::getInstance().getNumProcesses() * Params::getInstance().num_threads);
         }
         MPI_Barrier(MPI_COMM_WORLD);
         #ifdef _IQTREE_MPI
