@@ -24,6 +24,7 @@
 #include "nclextra/myreader.h"
 #include "main/phylotesting.h"
 #include "utils/timeutil.h" //for getRealTime()
+#include <queue>
 
 Alignment *createAlignment(string aln_file, const char *sequence_type, InputType intype, string model_name) {
     bool is_dir = isDirectory(aln_file.c_str());
@@ -155,6 +156,7 @@ void SuperAlignment::readFromParams(Params &params) {
             outWarning("No parsimony-informative sites in partition " + (*it)->name);
         }
     }}
+    splitPartitions(params);
 }
 
 void SuperAlignment::init(StrVector *sequence_names) {
@@ -880,6 +882,116 @@ void SuperAlignment::printBestPartitionRaxml(const char *filename) {
     
 }
 
+void SuperAlignment::splitPartitions(Params &params) {
+    const std::string prefixPath = string(params.out_prefix) + "/tmp/";
+    system(("mkdir " + prefixPath).c_str());
+    
+    auto calcRate = [&](Alignment* aln) {
+        aln->printAlignment(IN_FASTA, (prefixPath + aln->name + ".fasta").c_str());
+        system(("nohup ./tiger_original/tiger -in " + prefixPath + aln->name + ".fasta -f s,r -rl " + prefixPath + aln->name + ".rate").c_str());
+        std::ifstream in(prefixPath + aln->name + ".rate");
+        std::string line;
+        std::vector<double> rates;
+        while (std::getline(in, line)) {
+            std::istringstream iss(line);
+            double rate;
+            iss >> rate;
+            rates.push_back(rate);
+        }
+        assert(rates.size() == aln->getNSite());
+        return rates;
+    };
+    
+
+    std::queue<Alignment*> q;
+    for (int i = 0; i < partitions.size(); ++i) {
+        q.push(partitions[i]);
+    }
+
+    auto getPartitionIdx = [&](double lh0, double lh1, double lh2, int stg) {
+        if (stg == 1) { // assign to best likelihood subset
+            double maxLh = std::max({lh1, lh2, lh0});
+            if (maxLh == lh0) return 0;
+            if (maxLh == lh1) return 1;
+            return 2;
+        } else { // assign to subset based on probability distribution
+            double minLH = std::min({lh1, lh2, lh0});
+            double eps0 = lh0 - minLH;
+            double eps1 = lh1 - minLH;
+            double eps2 = lh2 - minLH;
+            double total = exp(eps0) + exp(eps1) + exp(eps2);
+
+            double r = rand() / RAND_MAX;
+            if (r < exp(eps0) / total) return 0;
+            if (r < (exp(eps0) + exp(eps1)) / total) return 1;
+            return 2;
+        } 
+    };
+
+    
+    auto calcLH = [&](Alignment* aln, std::string model) {
+        std::string filename = prefixPath + aln->name + ".phy";
+        aln->printAlignment(IN_PHYLIP, filename.c_str());
+        std::string cmd = "iqtree2 -s " + filename + " -m " + model + " -t " + filename + " --sitelh --safe --prefix " + prefixPath + aln->name + " --redo";
+        system(cmd.c_str());
+        std::vector<double> lh;
+        std::ifstream in(prefixPath + aln->name + ".phy.sitelh");
+        std::string line;
+        while (std::getline(in, line)) {
+            std::istringstream iss(line);
+            double l;
+            iss >> l;
+            lh.push_back(l);
+        }
+        return lh;
+    };
+
+    while (!q.empty()) {
+        Alignment* aln = q.front();
+        q.pop();
+        // calculate rates by TIGER
+        std::vector<double> rates = calcRate(aln);
+        double maxRate = - 1e18, minRate = 1e18;
+        for (int i = 0; i < rates.size(); ++i) {
+            if (maxRate < rates[i]) maxRate = rates[i];
+            if (minRate > rates[i]) minRate = rates[i];
+        }
+        double lowerPivot = minRate + (maxRate - minRate) / 3;
+        double upperPivot = maxRate - (maxRate - minRate) / 3;
+        std::vector<std::vector<int>> sitesOfParts(3);
+        for (int i = 0; i < rates.size(); ++i) {
+            if (rates[i] < lowerPivot) sitesOfParts[0].push_back(i);
+            else if (rates[i] < upperPivot) sitesOfParts[1].push_back(i);
+            else sitesOfParts[2].push_back(i);
+        }
+        if (sitesOfParts[0].empty() || sitesOfParts[1].empty() || sitesOfParts[2].empty()) {
+            for (int i = 0; i < 3; ++i) sitesOfParts[i].clear();
+            for (int i = 0; i < rates.size(); ++i) {
+                if (rates[i] > upperPivot && sitesOfParts[2].size() <= rates.size() / 3) sitesOfParts[2].push_back(i);
+                else if (rates[i] < lowerPivot && sitesOfParts[0].size() <= rates.size() / 3) sitesOfParts[0].push_back(i);
+                else sitesOfParts[1].push_back(i);
+            }
+        }
+        // find best model for each subset
+
+        // calculate likelihood for each subset based on the best model
+
+        std::vector<double> lh[3];
+        for (int i = 0; i < 3; ++i) {
+            Alignment* subAln = new Alignment;
+            subAln->extractSites(aln, sitesOfParts[i]);
+            
+        }
+
+        // reassign sites to subsets
+
+        for (int i = 0; i < 3; ++i) sitesOfParts[i].clear();
+        for (int i = 0; i < rates.size(); ++i) {
+            sitesOfParts[getPartitionIdx(lh[0][i], lh[1][i], lh[2][i], 1)].push_back(i);
+        }
+    }
+    
+}
 
 void SuperAlignment::linkSubAlignment(int part) {
 	ASSERT(taxa_index.size() == getNSeq());

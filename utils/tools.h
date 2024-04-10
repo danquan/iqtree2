@@ -622,6 +622,11 @@ public:
     bool fpqmaker;
 
     /**
+     *  Optimize pQMaker by splitting alignments
+     */
+    bool split;
+
+    /**
     *  Fast and accurate optimiation for alpha and p_invar
     */
     bool fai;

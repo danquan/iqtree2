@@ -1010,6 +1010,8 @@ public:
      */
     void extractMapleFile(const std::string& aln_name, const InputType& format);
 
+        vector<double> rates;
+
 protected:
 
 
