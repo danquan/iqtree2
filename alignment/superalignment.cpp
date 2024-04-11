@@ -883,9 +883,13 @@ void SuperAlignment::printBestPartitionRaxml(const char *filename) {
 }
 
 void SuperAlignment::splitPartitions(Params &params) {
+    const int MINLEN = 20;
+    
+    const std::string splitDir = string(params.out_prefix) + "/split/";
     const std::string prefixPath = string(params.out_prefix) + "/tmp/";
     system(("mkdir " + prefixPath).c_str());
-    
+    system(("mkdir " + splitDir).c_str());
+
     auto calcRate = [&](Alignment* aln) {
         aln->printAlignment(IN_FASTA, (prefixPath + aln->name + ".fasta").c_str());
         system(("nohup ./tiger_original/tiger -in " + prefixPath + aln->name + ".fasta -f s,r -rl " + prefixPath + aln->name + ".rate").c_str());
@@ -929,10 +933,10 @@ void SuperAlignment::splitPartitions(Params &params) {
     };
 
     
-    auto calcLH = [&](Alignment* aln, std::string model) {
+    auto calcLH = [&](Alignment* aln, std::string model, std::string treefile) {
         std::string filename = prefixPath + aln->name;
         aln->printAlignment(IN_PHYLIP, filename.c_str());
-        std::string cmd = "nohup ./iqtree2-mpi -s " + filename + " -m " + model + " -t " + filename + ".treefile --sitelh --safe --prefix " + prefixPath + aln->name + " --redo";
+        std::string cmd = "nohup ./iqtree2-mpi -s " + filename + " -m " + model + " -t " + treefile + " --sitelh --safe --prefix " + prefixPath + aln->name + " --redo";
         system(cmd.c_str());
         std::vector<double> lh;
         std::ifstream in(prefixPath + aln->name + ".sitelh");
@@ -995,6 +999,12 @@ void SuperAlignment::splitPartitions(Params &params) {
     while (!q.empty()) {
         Alignment* aln = q.front();
         q.pop();
+
+        if (aln->getNSite() < MINLEN) {
+            aln->printAlignment(IN_PHYLIP, (splitDir + aln->name).c_str());
+            continue;
+        }
+
         // calculate rates by TIGER
         std::vector<double> rates = calcRate(aln);
         double maxRate = - 1e18, minRate = 1e18;
@@ -1020,19 +1030,14 @@ void SuperAlignment::splitPartitions(Params &params) {
         }
         // find best model for each subset
         std::vector<std::string> models = findBestModel(aln, sitesOfParts);
-    
+        const std::string treefile = prefixPath + aln->name + ".treefile";
         // calculate likelihood for each subset based on the best model
 
         std::vector<double> lh[3];
         for (int i = 0; i < 3; ++i) {
-            Alignment* subAln = new Alignment;
-            subAln->extractSites(aln, sitesOfParts[i]);
-            subAln->name = aln->name + "_" + std::to_string(i);
-            lh[i] = calcLH(subAln, models[i]);
+            lh[i] = calcLH(aln, models[i], treefile);
         }
-
         // reassign sites to subsets
-
         for (int i = 0; i < 3; ++i) sitesOfParts[i].clear();
         for (int i = 0; i < aln->getNSite(); ++i) {
             Pattern p = aln->getPattern(i);
@@ -1041,12 +1046,48 @@ void SuperAlignment::splitPartitions(Params &params) {
             else 
                 sitesOfParts[getPartitionIdx(lh[0][i], lh[1][i], lh[2][i], 0)].push_back(i);
         }
-
         // if a subset is too small, assign its sites to the other subsets
-
-        
+        int smallCount = 0;
+        for (int i = 0; i < 3; ++i) {
+            if (sitesOfParts[i].size() < aln->getNSite() / 5) {
+                smallCount++;
+            }
+        }
+        if (smallCount > 1) {
+            std::cout << "Split into " << sitesOfParts[0].size() << ", " << sitesOfParts[1].size() << ", " << sitesOfParts[2].size() << std::endl;
+            aln->printAlignment(IN_PHYLIP, (splitDir + aln->name).c_str());
+            continue;
+        }
+        for (int i = 0; i < 3; ++i) {
+            if (sitesOfParts[i].size() < aln->getNSite() / 5) {
+                std::vector<int> others;
+                for (int j = 0; j < 3; ++j) {
+                    if (j != i) {
+                        others.push_back(j);
+                    }
+                }
+                for (auto j: sitesOfParts[i]) {
+                    if (lh[others[0]][j] > lh[others[1]][j]) {
+                        sitesOfParts[others[0]].push_back(j);
+                    } else {
+                        sitesOfParts[others[1]].push_back(j);
+                    }
+                }
+                sitesOfParts[i].clear();
+            }
+        }
+        std::cout << "Split into " << sitesOfParts[0].size() << ", " << sitesOfParts[1].size() << ", " << sitesOfParts[2].size() << std::endl;
+        for (int i = 0; i < 3; ++i) {
+            if (sitesOfParts[i].empty()) continue;
+            Alignment* subAln = new Alignment;
+            subAln->extractSites(aln, sitesOfParts[i]);
+            subAln->name = aln->name + "_" + std::to_string(i);
+            q.push(subAln);
+        }
+        delete aln;
     }
-    
+    system(("rm -rf " + prefixPath).c_str());
+    exit(-1);
 }
 
 void SuperAlignment::linkSubAlignment(int part) {
