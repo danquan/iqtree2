@@ -156,7 +156,7 @@ void SuperAlignment::readFromParams(Params &params) {
             outWarning("No parsimony-informative sites in partition " + (*it)->name);
         }
     }}
-    splitPartitions(params);
+    if (params.split) splitPartitions(params);
 }
 
 void SuperAlignment::init(StrVector *sequence_names) {
@@ -909,7 +909,7 @@ void SuperAlignment::splitPartitions(Params &params) {
     }
 
     auto getPartitionIdx = [&](double lh0, double lh1, double lh2, int stg) {
-        if (stg == 1) { // assign to best likelihood subset
+        if (stg == 0) { // assign to best likelihood subset
             double maxLh = std::max({lh1, lh2, lh0});
             if (maxLh == lh0) return 0;
             if (maxLh == lh1) return 1;
@@ -930,20 +930,66 @@ void SuperAlignment::splitPartitions(Params &params) {
 
     
     auto calcLH = [&](Alignment* aln, std::string model) {
-        std::string filename = prefixPath + aln->name + ".phy";
+        std::string filename = prefixPath + aln->name;
         aln->printAlignment(IN_PHYLIP, filename.c_str());
-        std::string cmd = "iqtree2 -s " + filename + " -m " + model + " -t " + filename + " --sitelh --safe --prefix " + prefixPath + aln->name + " --redo";
+        std::string cmd = "nohup ./iqtree2-mpi -s " + filename + " -m " + model + " -t " + filename + ".treefile --sitelh --safe --prefix " + prefixPath + aln->name + " --redo";
         system(cmd.c_str());
         std::vector<double> lh;
-        std::ifstream in(prefixPath + aln->name + ".phy.sitelh");
+        std::ifstream in(prefixPath + aln->name + ".sitelh");
+        
         std::string line;
-        while (std::getline(in, line)) {
-            std::istringstream iss(line);
-            double l;
-            iss >> l;
+        std::getline(in, line); // skip the first line
+        std::getline(in, line);
+        std::istringstream iss(line);
+        std::string tmp; iss >> tmp; // skip the first word
+        double l;
+        while (iss >> l) {
             lh.push_back(l);
         }
         return lh;
+    };
+
+    auto findBestModel = [&](Alignment *aln, std::vector<std::vector<int>> sitesOfParts) {
+        ofstream out(prefixPath + aln->name + ".partitions");
+        out << "#nexus\nbegin sets;\n";
+        for (int i = 0; i < 3; ++i) {
+            out << "charset " << aln->name << "_" << i << " = ";
+            for (int j = 0; j < sitesOfParts[i].size(); ++j) {
+                out << sitesOfParts[i][j] + 1;
+                if (j < sitesOfParts[i].size() - 1) out << ",";
+            }
+            out << ";\n";
+        }
+        out << "end;\n";
+        out.close();
+        aln->printAlignment(IN_PHYLIP, (prefixPath + aln->name).c_str());
+        std::cout << "Calculating likelihood for " << aln->name << "..." << std::endl;
+        std::string cmd = "nohup ./iqtree2-mpi -s " + prefixPath + aln->name + " -m MF --fast --mset " + params.model_set + " -p " + prefixPath + aln->name + ".partitions --safe --prefix " + prefixPath + aln->name + " --seed 0 --redo";
+        system(cmd.c_str());
+        ifstream inp(prefixPath + aln->name + ".iqtree");
+        std::string line;
+        std::vector<std::string> models;
+        while (std::getline(inp, line)) {
+            if (line.find("Best-fit model") != std::string::npos) {
+                std::string str = line.substr(line.find(":") + 2);
+                bool isModel = 1;
+                std::string model;
+                for (int i = 0; i < str.size(); ++i) {
+                    if (str[i] == ':') {
+                        assert(isModel);
+                        models.push_back(model);
+                        isModel = false;
+                        model = "";
+                    } else if (str[i] == ',') {
+                        assert(!isModel);
+                        isModel = true;
+                    } else if (isModel) {
+                        model += str[i];
+                    }
+                }
+            }
+        }
+        return models;
     };
 
     while (!q.empty()) {
@@ -973,22 +1019,32 @@ void SuperAlignment::splitPartitions(Params &params) {
             }
         }
         // find best model for each subset
-
+        std::vector<std::string> models = findBestModel(aln, sitesOfParts);
+    
         // calculate likelihood for each subset based on the best model
 
         std::vector<double> lh[3];
         for (int i = 0; i < 3; ++i) {
             Alignment* subAln = new Alignment;
             subAln->extractSites(aln, sitesOfParts[i]);
-            
+            subAln->name = aln->name + "_" + std::to_string(i);
+            lh[i] = calcLH(subAln, models[i]);
         }
 
         // reassign sites to subsets
 
         for (int i = 0; i < 3; ++i) sitesOfParts[i].clear();
-        for (int i = 0; i < rates.size(); ++i) {
-            sitesOfParts[getPartitionIdx(lh[0][i], lh[1][i], lh[2][i], 1)].push_back(i);
+        for (int i = 0; i < aln->getNSite(); ++i) {
+            Pattern p = aln->getPattern(i);
+            if (p.isConst())
+                sitesOfParts[getPartitionIdx(lh[0][i], lh[1][i], lh[2][i], 1)].push_back(i);
+            else 
+                sitesOfParts[getPartitionIdx(lh[0][i], lh[1][i], lh[2][i], 0)].push_back(i);
         }
+
+        // if a subset is too small, assign its sites to the other subsets
+
+        
     }
     
 }
