@@ -891,18 +891,84 @@ void SuperAlignment::splitPartitions(Params &params) {
     system(("mkdir " + splitDir).c_str());
 
     auto calcRate = [&](Alignment* aln) {
+        /*
+        std::vector<double> rates_;
         aln->printAlignment(IN_FASTA, (prefixPath + aln->name + ".fasta").c_str());
-        system(("nohup ./tiger_original/tiger -in " + prefixPath + aln->name + ".fasta -f s,r -rl " + prefixPath + aln->name + ".rate").c_str());
+        system(("./tiger_original/tiger -in " + prefixPath + aln->name + ".fasta -f s,r -rl " + prefixPath + aln->name + ".rate").c_str());
         std::ifstream in(prefixPath + aln->name + ".rate");
         std::string line;
-        std::vector<double> rates;
+        
         while (std::getline(in, line)) {
             std::istringstream iss(line);
             double rate;
             iss >> rate;
-            rates.push_back(rate);
+            rates_.push_back(rate);
         }
-        assert(rates.size() == aln->getNSite());
+        */
+        vector<vector<vector<int>>> sequences(aln->getNSite());
+        for (int i = 0; i < aln->size(); ++i) {
+            Pattern p = aln->at(i);
+            if (p.isConst()) continue;
+            unordered_map<StateType, vector<int>> states;
+            for (int j = 0; j < p.size(); ++j) {
+                states[p[j]].push_back(j);
+            }
+            /*
+            for (auto it = states.begin(); it != states.end(); ++it) {
+                sequences[i].push_back(it->second);
+                for (auto x : it->second) {
+                    cout << x << ' ';
+                }
+                cout << "| ";
+            }
+            cout << '\n';
+            */
+        }
+        vector<double> ratePatterns(aln->size());
+        
+        for (int i = 0; i < aln->size(); ++i) {
+            if (aln->at(i).isConst()) {
+                ratePatterns[i] = 1.0;
+                continue;
+            }
+            vector<int> inSeq(aln->getNSeq());
+            for (int j = 0; j < sequences[i].size(); ++j) {
+                for (auto x : sequences[i][j]) {
+                    inSeq[x] = j;
+                }
+            }
+
+            int totalCount = 0;
+            double score = 0;
+            for (int j = 0; j < aln->size(); ++j) {
+                if (aln->at(j).isConst()) continue;
+                int cnt = 0;
+                totalCount += aln->at(j).frequency;
+                for (auto seq2 : sequences[j]) {
+                    int idx = inSeq[seq2[0]];
+                    auto seq = sequences[i][idx];
+                    bool found = true;
+                    for (int x = 0, y = 0; x < seq2.size(); ++x) {
+                        while (y < seq.size() && seq[y] != seq2[x]) ++y;
+                        if (y == seq.size()) {
+                            found = false;
+                            break;
+                        }
+                        ++y;
+                    }
+                    if (found) ++cnt;
+                }
+                score += 1.0 * cnt / sequences[j].size() * aln->at(j).frequency;
+            }
+            ratePatterns[i] = score / totalCount;
+        }
+        for (int i = 0; i < aln->getNSite(); ++i)
+            rates.push_back(ratePatterns[aln->getPatternID(i)]);
+        /*
+        for (int i = 0; i < aln->getNSite(); ++i) {
+            std::cout << rates[i] << ' ' << rates_[i] << '\n';
+        }
+        */
         return rates;
     };
     
@@ -1041,9 +1107,10 @@ void SuperAlignment::splitPartitions(Params &params) {
         for (int i = 0; i < 3; ++i) sitesOfParts[i].clear();
         for (int i = 0; i < aln->getNSite(); ++i) {
             Pattern p = aln->getPattern(i);
-            if (p.isConst())
+            if (p.isConst()) {
                 sitesOfParts[getPartitionIdx(lh[0][i], lh[1][i], lh[2][i], 1)].push_back(i);
-            else 
+                std::cout << i << ' ';
+            } else 
                 sitesOfParts[getPartitionIdx(lh[0][i], lh[1][i], lh[2][i], 0)].push_back(i);
         }
         // if a subset is too small, assign its sites to the other subsets
