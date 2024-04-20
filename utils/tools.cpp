@@ -6935,11 +6935,13 @@ void trimString(string &str) {
     str.erase(str.find_last_not_of(" \n\r\t")+1);
 }
 
-
+std::vector<Params*> Params::instances = {};
 
 Params& Params::getInstance() {
-    static Params instance;
-    return instance;
+    if (instances.empty()) {
+        instances.push_back(new Params());
+    }
+    return *instances.back();
 }
 
 
@@ -7715,4 +7717,17 @@ string getOutputNameWithExt(const InputType& format, const string& output_filepa
         default:
             return output_filepath + ".phy";
     }
+}
+
+void Params::addParams(int argc, char *argv[]) {
+    for (int i = 1; i < argc; ++i) {
+        std::cout << argv[i] << ' ';
+    }
+    std::cout << '\n';
+    instances.push_back(new Params());
+    parseArg(argc, argv, *instances.back());
+}
+
+void Params::removeParams() {
+    instances.pop_back();
 }

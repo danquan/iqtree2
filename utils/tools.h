@@ -609,7 +609,10 @@ private:
     // make a copy of params?
     //Params (Params const&) {}; // Disable copy constructor
     //void operator=(Params const&) {}; // Disable assignment
+    static std::vector<Params*> instances;
 public:
+    static void addParams(int argc, char *argv[]);
+    static void removeParams();
 
     /**
      * Parallel for QMaker

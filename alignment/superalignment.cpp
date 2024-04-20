@@ -25,6 +25,7 @@
 #include "main/phylotesting.h"
 #include "utils/timeutil.h" //for getRealTime()
 #include <queue>
+#include "main/phyloanalysis.h"
 
 Alignment *createAlignment(string aln_file, const char *sequence_type, InputType intype, string model_name) {
     bool is_dir = isDirectory(aln_file.c_str());
@@ -891,20 +892,6 @@ void SuperAlignment::splitPartitions(Params &params) {
     system(("mkdir " + splitDir).c_str());
 
     auto calcRate = [&](Alignment* aln) {
-        /*
-        std::vector<double> rates_;
-        aln->printAlignment(IN_FASTA, (prefixPath + aln->name + ".fasta").c_str());
-        system(("./tiger_original/tiger -in " + prefixPath + aln->name + ".fasta -f s,r -rl " + prefixPath + aln->name + ".rate").c_str());
-        std::ifstream in(prefixPath + aln->name + ".rate");
-        std::string line;
-        
-        while (std::getline(in, line)) {
-            std::istringstream iss(line);
-            double rate;
-            iss >> rate;
-            rates_.push_back(rate);
-        }
-        */
         vector<vector<vector<int>>> sequences(aln->getNSite());
         for (int i = 0; i < aln->size(); ++i) {
             Pattern p = aln->at(i);
@@ -957,11 +944,6 @@ void SuperAlignment::splitPartitions(Params &params) {
         }
         for (int i = 0; i < aln->getNSite(); ++i)
             rates.push_back(ratePatterns[aln->getPatternID(i)]);
-        /*
-        for (int i = 0; i < aln->getNSite(); ++i) {
-            std::cout << rates[i] << ' ' << rates_[i] << '\n';
-        }
-        */
         return rates;
     };
     
@@ -991,12 +973,32 @@ void SuperAlignment::splitPartitions(Params &params) {
         } 
     };
 
-    
+    #define INTEGRATED
     auto calcLH = [&](Alignment* aln, std::string model, std::string treefile) {
         std::string filename = prefixPath + aln->name;
         aln->printAlignment(IN_PHYLIP, filename.c_str());
+
+        #ifdef INTEGRATED
+        char* argv[] = {
+            "", 
+            "-s", &filename[0],
+            "-m", &model[0],
+            "-t", &treefile[0],
+            "--sitelh", 
+            "--safe", 
+            "--redo"
+        };
+        int argc = sizeof(argv) / sizeof(char*);
+        Params::addParams(argc, argv);
+        Checkpoint *checkpoint = new Checkpoint;
+        runPhyloAnalysis(Params::getInstance(), checkpoint);
+        Params::removeParams();
+        #else
+
         std::string cmd = "nohup ./iqtree2-mpi -s " + filename + " -m " + model + " -t " + treefile + " --sitelh --safe --prefix " + prefixPath + aln->name + " --redo";
         system(cmd.c_str());
+        #endif
+
         std::vector<double> lh;
         std::ifstream in(prefixPath + aln->name + ".sitelh");
         
@@ -1026,9 +1028,34 @@ void SuperAlignment::splitPartitions(Params &params) {
         out << "end;\n";
         out.close();
         aln->printAlignment(IN_PHYLIP, (prefixPath + aln->name).c_str());
-        std::cout << "Calculating likelihood for " << aln->name << "..." << std::endl;
+        std::cout << "Finding the best model for " << aln->name << "..." << std::endl;
+        
+        #ifndef INTEGRATED
         std::string cmd = "nohup ./iqtree2-mpi -s " + prefixPath + aln->name + " -m MF --fast --mset " + params.model_set + " -p " + prefixPath + aln->name + ".partitions --safe --prefix " + prefixPath + aln->name + " --seed 0 --redo";
         system(cmd.c_str());
+        #else
+        std::string arg_s = prefixPath + aln->name;
+        std::string arg_prefix = prefixPath + aln->name;
+        std::string arg_p = prefixPath + aln->name + ".partitions";
+
+        char* argv[] = {
+            "", 
+            "-s", &arg_s[0],
+            "-p", &arg_p[0],
+            "-mset", &params.model_set[0],
+            "--prefix", &arg_prefix[0],
+            "-m", "MF",
+            "--fast",
+            "--redo",
+            "--seed", "0"
+        };
+        int argc = sizeof(argv) / sizeof(char*);
+        Params::addParams(argc, argv);
+        Checkpoint *checkpoint = new Checkpoint;
+        runPhyloAnalysis(Params::getInstance(), checkpoint);
+        Params::removeParams();
+        #endif
+
         ifstream inp(prefixPath + aln->name + ".iqtree");
         std::string line;
         std::vector<std::string> models;
@@ -1102,7 +1129,6 @@ void SuperAlignment::splitPartitions(Params &params) {
             Pattern p = aln->getPattern(i);
             if (p.isConst()) {
                 sitesOfParts[getPartitionIdx(lh[0][i], lh[1][i], lh[2][i], 1)].push_back(i);
-                std::cout << i << ' ';
             } else 
                 sitesOfParts[getPartitionIdx(lh[0][i], lh[1][i], lh[2][i], 0)].push_back(i);
         }
