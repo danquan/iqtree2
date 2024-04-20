@@ -913,16 +913,9 @@ void SuperAlignment::splitPartitions(Params &params) {
             for (int j = 0; j < p.size(); ++j) {
                 states[p[j]].push_back(j);
             }
-            /*
-            for (auto it = states.begin(); it != states.end(); ++it) {
+            
+            for (auto it = states.begin(); it != states.end(); ++it)
                 sequences[i].push_back(it->second);
-                for (auto x : it->second) {
-                    cout << x << ' ';
-                }
-                cout << "| ";
-            }
-            cout << '\n';
-            */
         }
         vector<double> ratePatterns(aln->size());
         
