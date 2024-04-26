@@ -967,6 +967,47 @@ void SuperAlignment::splitPartitions(Params &params) {
         return rates;
     };
     
+    auto calcRateFast = [&](Alignment* aln) {
+        vector<int> hammingPairs(aln->getNSeq(), 0);
+
+        for (int i = 0; i < aln->size(); ++i) {
+            Pattern p = aln->at(i);
+            if (p.isConst()) continue;
+            for (int j = 0; j < aln->getNSeq(); ++j) {
+                for (int k = j + 1; k < aln->getNSeq(); ++k) {
+                    if (p[j] == p[k]) ++hammingPairs[j];
+                }
+            }
+        }
+
+        long long sum = 0;
+        for (int i = 0; i < aln->getNSeq(); ++i) {
+            sum += hammingPairs[i];
+        }
+
+        vector<double> ratePatterns(aln->size());
+        for (int i = 0; i < aln->size(); ++i) {
+            if (aln->at(i).isConst()) {
+                ratePatterns[i] = 1.0;
+                continue;
+            }
+            
+            for (int j = 0; j < aln->getNSeq(); ++j) 
+                for (int k = j + 1; k < aln->getNSeq(); ++k) 
+                    if (aln->at(i)[j] == aln->at(i)[k]) ratePatterns[i] += 1.0 / hammingPairs[j];
+        }
+
+        for (int i = 0; i < aln->size(); ++i) {
+            ratePatterns[i] /= sum;
+        }
+
+        vector<double> rates;
+        for (int i = 0; i < aln->getNSite(); ++i) {
+            rates.push_back(ratePatterns[aln->getPatternID(i)]);
+        }
+
+        return rates;
+    };
 
     std::queue<Alignment*> q;
     for (int i = 0; i < partitions.size(); ++i) {
@@ -1112,7 +1153,7 @@ void SuperAlignment::splitPartitions(Params &params) {
         }
 
         // calculate rates by TIGER
-        std::vector<double> rates = calcRate(aln);
+        std::vector<double> rates = calcRateFast(aln);
         double maxRate = - 1e18, minRate = 1e18;
         for (int i = 0; i < rates.size(); ++i) {
             if (maxRate < rates[i]) maxRate = rates[i];
