@@ -884,16 +884,19 @@ void SuperAlignment::printBestPartitionRaxml(const char *filename) {
 }
 
 void SuperAlignment::splitPartitions(Params &params) {
+    sort(partitions.begin(), partitions.end(), [](Alignment *a, Alignment *b) {
+        return a->getNPattern() * a->getNSeq() < b->getNPattern() * b->getNSeq();
+    });
     auto computePartitionCost = [&]() {
         vector<double> pref(partitions.size() + 1);
         vector<double> suff(partitions.size() + 1);
         pref[0] = 0;
         suff[partitions.size()] = 0;
         for (int i = 1; i <= partitions.size(); ++i) {
-            pref[i] = pref[i-1] + partitions[i-1]->getNSite() * partitions[i-1]->getNSeq();
+            pref[i] = pref[i-1] + partitions[i-1]->getNPattern() * partitions[i-1]->getNSeq();
         }
         for (int i = partitions.size() - 1; i >= 0; --i) {
-            suff[i] = suff[i+1] + partitions[i]->getNSite() * partitions[i]->getNSeq();
+            suff[i] = suff[i+1] + partitions[i]->getNPattern() * partitions[i]->getNSeq();
         }
         for (int i = partitions.size(); i >= 1; --i) {
             if (suff[i] / (partitions.size() - i) <= 2 * pref[i] / i) {
@@ -903,7 +906,7 @@ void SuperAlignment::splitPartitions(Params &params) {
         return pref[partitions.size()] / partitions.size() * 2;
     };
 
-    double partitionCost = computePartitionCost();
+    double partitionCost = 500;
     
     const std::string splitDir = string(params.out_prefix) + "/split/";
     const std::string prefixPath = string(params.out_prefix) + "/tmp/";
@@ -1034,7 +1037,7 @@ void SuperAlignment::splitPartitions(Params &params) {
         } 
     };
 
-    #define INTEGRATED
+    // #define INTEGRATED
     auto calcLH = [&](Alignment* aln, std::string model, std::string treefile) {
         std::string filename = prefixPath + aln->name;
         aln->printAlignment(IN_PHYLIP, filename.c_str());
@@ -1143,6 +1146,24 @@ void SuperAlignment::splitPartitions(Params &params) {
         return models;
     };
 
+    auto getBIC = [&](Alignment* aln) {
+        std::ifstream inp(prefixPath + aln->name + "_BIC.iqtree");
+        if (!inp) {
+            aln->printAlignment(IN_PHYLIP, (prefixPath + aln->name).c_str());
+            std::string cmd = "nohup ./iqtree2-mpi -s " + prefixPath + aln->name + " -m MF --fast --mset " + params.model_set + " --safe --prefix " + prefixPath + aln->name + "_BIC" + " --seed 0 --redo";
+            system(cmd.c_str());
+            inp = std::ifstream(prefixPath + aln->name + "_BIC.iqtree");
+        }
+        std::string line;
+        while (std::getline(inp, line)) {
+            if (line.find("Bayesian information criterion (BIC) score:") != std::string::npos) {
+                std::string str = line.substr(line.find(":") + 2);
+                return std::stod(str);
+            }
+        }
+        assert(0);
+    };
+
     while (!q.empty()) {
         Alignment* aln = q.front();
         q.pop();
@@ -1175,8 +1196,14 @@ void SuperAlignment::splitPartitions(Params &params) {
                 else sitesOfParts[1].push_back(i);
             }
         }
+
+        // std::cout << "Split into " << sitesOfParts[0].size() << ", " << sitesOfParts[1].size() << ", " << sitesOfParts[2].size() << std::endl;
+
         // find best model for each subset
         std::vector<std::string> models = findBestModel(aln, sitesOfParts);
+        for (auto &model : models) {
+            std::cout << model << std::endl;
+        }
         const std::string treefile = prefixPath + aln->name + ".treefile";
         // calculate likelihood for each subset based on the best model
 
@@ -1184,6 +1211,7 @@ void SuperAlignment::splitPartitions(Params &params) {
         for (int i = 0; i < 3; ++i) {
             lh[i] = calcLH(aln, models[i], treefile);
         }
+        
         // reassign sites to subsets
         for (int i = 0; i < 3; ++i) sitesOfParts[i].clear();
         for (int i = 0; i < aln->getNSite(); ++i) {
@@ -1193,6 +1221,8 @@ void SuperAlignment::splitPartitions(Params &params) {
             } else 
                 sitesOfParts[getPartitionIdx(lh[0][i], lh[1][i], lh[2][i], 0)].push_back(i);
         }
+        std::cout << "Split into " << sitesOfParts[0].size() << ", " << sitesOfParts[1].size() << ", " << sitesOfParts[2].size() << std::endl;
+
         // if a subset is too small, assign its sites to the other subsets
         int smallCount = 0;
         for (int i = 0; i < 3; ++i) {
@@ -1223,14 +1253,26 @@ void SuperAlignment::splitPartitions(Params &params) {
             }
         }
         std::cout << "Split into " << sitesOfParts[0].size() << ", " << sitesOfParts[1].size() << ", " << sitesOfParts[2].size() << std::endl;
+        vector<Alignment*> subAlns;
         for (int i = 0; i < 3; ++i) {
             if (sitesOfParts[i].empty()) continue;
             Alignment* subAln = new Alignment;
             subAln->extractSites(aln, sitesOfParts[i]);
             subAln->name = aln->name + "_" + std::to_string(i);
-            q.push(subAln);
+            subAlns.push_back(subAln);
         }
-        delete aln;
+
+        // check if the partition is good
+
+        double oldBic = getBIC(aln);
+        double newBic = 0;
+        for (auto subAln : subAlns)
+            newBic += getBIC(subAln);
+        if (oldBic <= newBic) {
+            for (auto subAln : subAlns) {
+                q.push(subAln);
+            }
+        } else aln->printAlignment(IN_PHYLIP, (splitDir + aln->name).c_str());
     }
     system(("rm -rf " + prefixPath).c_str());
 
