@@ -884,6 +884,8 @@ void SuperAlignment::printBestPartitionRaxml(const char *filename) {
 }
 
 void SuperAlignment::splitPartitions(Params &params) {
+    const int BOUND_LEN = 50;
+
     sort(partitions.begin(), partitions.end(), [](Alignment *a, Alignment *b) {
         return a->getNPattern() * a->getNSeq() < b->getNPattern() * b->getNSeq();
     });
@@ -1143,6 +1145,12 @@ void SuperAlignment::splitPartitions(Params &params) {
                 }
             }
         }
+        for (auto &model: models) {
+            int pos = model.find("+ASC");
+            if (pos != std::string::npos) {
+                model = model.substr(0, pos) + model.substr(pos + 4);
+            }
+        }
         return models;
     };
 
@@ -1208,9 +1216,8 @@ void SuperAlignment::splitPartitions(Params &params) {
         // calculate likelihood for each subset based on the best model
 
         std::vector<double> lh[3];
-        for (int i = 0; i < 3; ++i) {
+        for (int i = 0; i < 3; ++i) 
             lh[i] = calcLH(aln, models[i], treefile);
-        }
         
         // reassign sites to subsets
         for (int i = 0; i < 3; ++i) sitesOfParts[i].clear();
@@ -1221,12 +1228,10 @@ void SuperAlignment::splitPartitions(Params &params) {
             } else 
                 sitesOfParts[getPartitionIdx(lh[0][i], lh[1][i], lh[2][i], 0)].push_back(i);
         }
-        std::cout << "Split into " << sitesOfParts[0].size() << ", " << sitesOfParts[1].size() << ", " << sitesOfParts[2].size() << std::endl;
-
         // if a subset is too small, assign its sites to the other subsets
         int smallCount = 0;
         for (int i = 0; i < 3; ++i) {
-            if (sitesOfParts[i].size() < aln->getNSite() / 5) {
+            if (sitesOfParts[i].size() < BOUND_LEN) {
                 smallCount++;
             }
         }
@@ -1235,7 +1240,7 @@ void SuperAlignment::splitPartitions(Params &params) {
             continue;
         }
         for (int i = 0; i < 3; ++i) {
-            if (sitesOfParts[i].size() < aln->getNSite() / 5) {
+            if (sitesOfParts[i].size() < BOUND_LEN) {
                 std::vector<int> others;
                 for (int j = 0; j < 3; ++j) {
                     if (j != i) {
@@ -1252,6 +1257,7 @@ void SuperAlignment::splitPartitions(Params &params) {
                 sitesOfParts[i].clear();
             }
         }
+
         std::cout << "Split into " << sitesOfParts[0].size() << ", " << sitesOfParts[1].size() << ", " << sitesOfParts[2].size() << std::endl;
         vector<Alignment*> subAlns;
         for (int i = 0; i < 3; ++i) {
@@ -1268,7 +1274,8 @@ void SuperAlignment::splitPartitions(Params &params) {
         double newBic = 0;
         for (auto subAln : subAlns)
             newBic += getBIC(subAln);
-        if (oldBic <= newBic) {
+        cout << "Old BIC: " << oldBic << " New BIC: " << newBic << endl;
+        if (oldBic >= newBic) {
             for (auto subAln : subAlns) {
                 q.push(subAln);
             }
