@@ -908,12 +908,16 @@ void SuperAlignment::splitPartitions(Params &params) {
         return pref[partitions.size()] / partitions.size() * 2;
     };
 
-    double partitionCost = 500;
+    double partitionCost = computePartitionCost();
     
     const std::string splitDir = string(params.out_prefix) + "/split/";
     const std::string prefixPath = string(params.out_prefix) + "/tmp/";
+    
     system(("mkdir " + prefixPath).c_str());
-    system(("mkdir " + splitDir).c_str());
+    if (system(("test -d " + splitDir).c_str()) == 0) {
+        system(("rm -rf " + splitDir).c_str());
+    }
+    system(("mkdir " + splitDir).c_str());    
 
     auto calcRate = [&](Alignment* aln) {
         vector<double> rates;
@@ -1032,7 +1036,7 @@ void SuperAlignment::splitPartitions(Params &params) {
             double eps2 = lh2 - minLH;
             double total = exp(eps0) + exp(eps1) + exp(eps2);
 
-            double r = rand() / RAND_MAX;
+            double r = (double) rand() / RAND_MAX;
             if (r < exp(eps0) / total) return 0;
             if (r < (exp(eps0) + exp(eps1)) / total) return 1;
             return 2;
@@ -1061,7 +1065,7 @@ void SuperAlignment::splitPartitions(Params &params) {
         Params::removeParams();
         #else
 
-        std::string cmd = "nohup ./iqtree2-mpi -s " + filename + " -m " + model + " -t " + treefile + " --sitelh --safe --prefix " + prefixPath + aln->name + " --redo";
+        std::string cmd = "./iqtree2-mpi -s " + filename + " -m " + model + " -t " + treefile + " --sitelh --safe --prefix " + prefixPath + aln->name + " --redo > /dev/null";
         system(cmd.c_str());
         #endif
 
@@ -1097,7 +1101,8 @@ void SuperAlignment::splitPartitions(Params &params) {
         std::cout << "Finding the best model for " << aln->name << "..." << std::endl;
         
         #ifndef INTEGRATED
-        std::string cmd = "nohup ./iqtree2-mpi -s " + prefixPath + aln->name + " -m MF --fast --mset " + params.model_set + " -p " + prefixPath + aln->name + ".partitions --safe --prefix " + prefixPath + aln->name + " --seed 0 --redo";
+        std::string cmd = "./iqtree2-mpi -s " + prefixPath + aln->name + " -m MF --fast --mset " + params.model_set + " -p " + prefixPath + aln->name + ".partitions --safe --prefix " + prefixPath + aln->name + " --seed 0 --redo > /dev/null";
+        // cout << cmd << '\n';
         system(cmd.c_str());
         #else
         std::string arg_s = prefixPath + aln->name;
@@ -1176,13 +1181,14 @@ void SuperAlignment::splitPartitions(Params &params) {
         Alignment* aln = q.front();
         q.pop();
 
-        if (aln->getNSite() < partitionCost) {
+        if (aln->getNSite() < BOUND_LEN) {
             aln->printAlignment(IN_PHYLIP, (splitDir + aln->name).c_str());
             continue;
         }
 
         // calculate rates by TIGER
-        std::vector<double> rates = calcRateFast(aln);
+        std::vector<double> rates = calcRate(aln);
+        
         double maxRate = - 1e18, minRate = 1e18;
         for (int i = 0; i < rates.size(); ++i) {
             if (maxRate < rates[i]) maxRate = rates[i];
@@ -1204,29 +1210,24 @@ void SuperAlignment::splitPartitions(Params &params) {
                 else sitesOfParts[1].push_back(i);
             }
         }
-
-        // std::cout << "Split into " << sitesOfParts[0].size() << ", " << sitesOfParts[1].size() << ", " << sitesOfParts[2].size() << std::endl;
-
         // find best model for each subset
         std::vector<std::string> models = findBestModel(aln, sitesOfParts);
+        /*
         for (auto &model : models) {
             std::cout << model << std::endl;
         }
+        */
         const std::string treefile = prefixPath + aln->name + ".treefile";
         // calculate likelihood for each subset based on the best model
-
         std::vector<double> lh[3];
         for (int i = 0; i < 3; ++i) 
             lh[i] = calcLH(aln, models[i], treefile);
-        
         // reassign sites to subsets
         for (int i = 0; i < 3; ++i) sitesOfParts[i].clear();
         for (int i = 0; i < aln->getNSite(); ++i) {
             Pattern p = aln->getPattern(i);
-            if (p.isConst()) {
-                sitesOfParts[getPartitionIdx(lh[0][i], lh[1][i], lh[2][i], 1)].push_back(i);
-            } else 
-                sitesOfParts[getPartitionIdx(lh[0][i], lh[1][i], lh[2][i], 0)].push_back(i);
+            int idx = (p.isConst() ? getPartitionIdx(lh[0][i], lh[1][i], lh[2][i], 1) : getPartitionIdx(lh[0][i], lh[1][i], lh[2][i], 0));
+            sitesOfParts[idx].push_back(i);
         }
         // if a subset is too small, assign its sites to the other subsets
         int smallCount = 0;
@@ -1274,7 +1275,7 @@ void SuperAlignment::splitPartitions(Params &params) {
         double newBic = 0;
         for (auto subAln : subAlns)
             newBic += getBIC(subAln);
-        cout << "Old BIC: " << oldBic << " New BIC: " << newBic << endl;
+        // cout << "Old BIC: " << oldBic << " New BIC: " << newBic << endl;
         if (oldBic >= newBic) {
             for (auto subAln : subAlns) {
                 q.push(subAln);
