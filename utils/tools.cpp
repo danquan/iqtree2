@@ -1591,6 +1591,10 @@ void parseArg(int argc, char *argv[], Params &params) {
 						params.step_budget);
 				continue;
 			}
+            if (strcmp(argv[cnt], "--non-mpi-treesearch") == 0) {
+                params.non_mpi_treesearch = true;
+                continue;
+            }
 			if (strcmp(argv[cnt], "-mb") == 0) {
 				cnt++;
 				if (cnt >= argc)

@@ -248,12 +248,12 @@ double PhyloSuperTreeUnlinked::doTreeSearch() {
         getCheckpoint()->getSubCheckpoint(ckp, part_tree->aln->name);
         part_tree->setCheckpoint(ckp);
         double score = part_tree->doTreeSearch();
-        tree_lh += score;
 #pragma omp critical
         {
             getCheckpoint()->putSubCheckpoint(ckp, part_tree->aln->name);
             getCheckpoint()->dump();
-            cmust << "Partition " << part_tree->aln->name
+
+            /*cmust*/ cout << "Partition " << part_tree->aln->name
                  << " / Iterations: " << part_tree->stop_rule.getCurIt()
                  << " / LogL: " << score
                  << " / Time: " << convert_time(getRealTime() - params->start_real_time)
