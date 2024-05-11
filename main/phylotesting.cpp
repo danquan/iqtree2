@@ -886,13 +886,14 @@ void runModelFinder(Params &params, IQTree &iqtree, ModelCheckpoint &model_info)
     if (iqtree.isSuperTree()) {
         // partition model selection
         PhyloSuperTree *stree = (PhyloSuperTree*)&iqtree;
+        string res_models = "";
         testPartitionModel(params, stree, model_info, models_block, params.num_threads);
         stree->mapTrees();
-        string res_models = "";
         for (auto it = stree->begin(); it != stree->end(); it++) {
             if (it != stree->begin()) res_models += ",";
             res_models += (*it)->aln->model_name;
         }
+        printf("Process %d: %s\n", MPIHelper::getInstance().getProcessID(), res_models.c_str());
         iqtree.aln->model_name = res_models;
     } else {
         // single model selection
@@ -918,9 +919,33 @@ void runModelFinder(Params &params, IQTree &iqtree, ModelCheckpoint &model_info)
     }
 
     delete models_block;
+
+    // string filename = (string)params.out_prefix + ".model";
+    // filename += to_string(MPIHelper::getInstance().getProcessID());
+    // ofstream model_info_file(filename.c_str());
+    // for (const auto& pair : model_info) {
+    //     model_info_file << pair.first << " = " << pair.second << endl;
+    // }
+
+    ModelCheckpoint summary_model = model_info;
+    if (MPIHelper::getInstance().isWorker()) {
+        MPIHelper::getInstance().sendCheckpoint(&summary_model, 0);
+    } else {
+        for (int i = 1; i < MPIHelper::getInstance().getNumProcesses(); i++) {
+            ModelCheckpoint worker_model;
+            MPIHelper::getInstance().recvCheckpoint(&worker_model, i);
+            
+            for (const auto& pair : worker_model) {
+                summary_model.put(pair.first, pair.second);
+            }
+        }
+    }
     
     // force to dump all checkpointing information
-    model_info.dump(true);
+    if (MPIHelper::getInstance().getProcessID() == 0) {
+        summary_model.dump(true);
+        model_info = summary_model;
+    }
     
     // transfer models parameters
     transferModelFinderParameters(&iqtree, orig_checkpoint);
@@ -2054,13 +2079,13 @@ void testPartitionModel(Params &params, PhyloSuperTree* in_tree, ModelCheckpoint
         brlen_type = BRLEN_OPTIMIZE;
     }
     bool test_merge = (params.partition_merge != MERGE_NONE) && params.partition_type != TOPO_UNLINKED && (in_tree->size() > 1);
-    
+
 #ifdef _OPENMP
     parallel_over_partitions = !params.model_test_and_tree && (in_tree->size() >= num_threads);
 #pragma omp parallel for private(i) schedule(dynamic) reduction(+: lhsum, dfsum) if(parallel_over_partitions)
 #endif
 	for (int j = 0; j < in_tree->size(); j++) {
-        i = partitionID[j].first;
+        i = partitionID[j].first;        
         PhyloTree *this_tree = in_tree->at(i);
 		// scan through models for this partition, assuming the information occurs consecutively
 		ModelCheckpoint part_model_info;
@@ -2461,6 +2486,7 @@ void testPartitionModel(Params &params, PhyloSuperTree* in_tree, ModelCheckpoint
 
     inf_score = computeInformationScore(lhsum, dfsum, ssize, params.model_test_criterion);
     cout << "Best partition model " << criterionName(params.model_test_criterion) << " score: " << inf_score << " (LnL: " << lhsum << "  df:" << dfsum << ")" << endl;
+    printf((in_tree->root == NULL) ? "No tree found\n" : "Tree found\n");
 
     ((SuperAlignment*)in_tree->aln)->printBestPartition((string(params.out_prefix) + ".best_scheme.nex").c_str());
 	((SuperAlignment*)in_tree->aln)->printBestPartitionRaxml((string(params.out_prefix) + ".best_scheme").c_str());
@@ -2628,7 +2654,6 @@ CandidateModel CandidateModelSet::test(Params &params, PhyloTree* in_tree, Model
             if (at(subst_block).rate_name == at(0).rate_name)
                 break;
     }
-    
     
     //------------- MAIN FOR LOOP GOING THROUGH ALL MODELS TO BE TESTED ---------//
 

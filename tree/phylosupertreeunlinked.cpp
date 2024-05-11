@@ -246,6 +246,7 @@ double PhyloSuperTreeUnlinked::doTreeSearch() {
         IQTree *part_tree = (IQTree*)at(part_order[i]);
         Checkpoint *ckp = new Checkpoint;
         getCheckpoint()->getSubCheckpoint(ckp, part_tree->aln->name);
+        printf("Process %d: Partition %s\n", MPIHelper::getInstance().getProcessID(), part_tree->aln->name.c_str());
         part_tree->setCheckpoint(ckp);
         double score = part_tree->doTreeSearch();
 #pragma omp critical
@@ -258,6 +259,10 @@ double PhyloSuperTreeUnlinked::doTreeSearch() {
                  << " / LogL: " << score
                  << " / Time: " << convert_time(getRealTime() - params->start_real_time)
                  << endl;
+            
+            printf("Partition %s / Iterations: %d / LogL: %.2f / Time: %.2f\n",
+                   part_tree->aln->name.c_str(), part_tree->stop_rule.getCurIt(), score,
+                   convert_time(getRealTime() - params->start_real_time));
         }
         delete ckp;
         part_tree->setCheckpoint(getCheckpoint());

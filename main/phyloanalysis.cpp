@@ -4239,7 +4239,25 @@ void runPhyloAnalysis(Params &params, Checkpoint *checkpoint, IQTree *&tree, Ali
         }
         tree = newIQTreeMix(params, alignment); // tree mixture model
     } else {
-        tree = newIQTree(params, alignment);
+        if (params.non_mpi_treesearch) {
+            int sz = ((SuperAlignment*) alignment)->partitions.size();
+            int block_sz = (sz - 1) / MPIHelper::getInstance().getNumProcesses() + 1;
+            int startID = MPIHelper::getInstance().getProcessID() * block_sz;
+            int endID = min(startID + block_sz, sz);
+            IntVector seqIDs = IntVector();
+            for (int i = startID; i < endID; i++) {
+                seqIDs.push_back(i);
+            }
+
+            // printf("Process %d, startID: %d, endID: %d\n", MPIHelper::getInstance().getProcessID(), startID, endID);
+            
+            alignment = ((SuperAlignment*)alignment)->extractPartitions(seqIDs);
+            tree = newIQTree(params, alignment);
+
+            // printf("Size: %d\n", ((PhyloSuperTree*)tree)->size());
+        } else {
+            tree = newIQTree(params, alignment);
+        }
     }
 
     tree->setCheckpoint(checkpoint);

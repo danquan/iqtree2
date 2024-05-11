@@ -831,7 +831,8 @@ void IQTree::initCandidateTreeSet(int nParTrees, int nNNITrees) {
     }
 
     //---- BLOCKING COMMUNICATION
-    // syncCandidateTrees(nNNITrees, false);
+    if (!params->non_mpi_treesearch)
+        syncCandidateTrees(nNNITrees, false);
 
 
     vector<string> bestInitTrees; // Set of best initial trees for doing NNIs
@@ -877,7 +878,8 @@ void IQTree::initCandidateTreeSet(int nParTrees, int nNNITrees) {
     }
 
     //---- BLOCKING COMMUNICATION
-    syncCandidateTrees(Params::getInstance().numSupportTrees, true);
+    if (!params->non_mpi_treesearch)
+        syncCandidateTrees(Params::getInstance().numSupportTrees, true);
 
 }
 
@@ -2290,7 +2292,6 @@ double IQTree::doTreeSearch() {
     stop_rule.getUFBootCountCheck(ufboot_count, ufboot_count_check);
 
     while (!stop_rule.meetStopCondition(stop_rule.getCurIt(), cur_correlation)) {
-
         searchinfo.curIter = stop_rule.getCurIt();
         // estimate logl_cutoff for bootstrap
         if (!boot_orig_logl.empty())
