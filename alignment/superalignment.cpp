@@ -1043,7 +1043,7 @@ void SuperAlignment::splitPartitions(Params &params) {
         } 
     };
 
-    // #define INTEGRATED
+    #define INTEGRATED
     auto calcLH = [&](Alignment* aln, std::string model, std::string treefile) {
         std::string filename = prefixPath + aln->name;
         aln->printAlignment(IN_PHYLIP, filename.c_str());
@@ -1163,8 +1163,30 @@ void SuperAlignment::splitPartitions(Params &params) {
         std::ifstream inp(prefixPath + aln->name + "_BIC.iqtree");
         if (!inp) {
             aln->printAlignment(IN_PHYLIP, (prefixPath + aln->name).c_str());
-            std::string cmd = "nohup ./iqtree2-mpi -s " + prefixPath + aln->name + " -m MF --fast --mset " + params.model_set + " --safe --prefix " + prefixPath + aln->name + "_BIC" + " --seed 0 --redo";
+            #ifndef INTEGRATED
+            std::string cmd = "./iqtree2-mpi -s " + prefixPath + aln->name + " -m MF --fast --mset " + params.model_set + " --safe --prefix " + prefixPath + aln->name + "_BIC" + " --seed 0 --redo > /dev/null";
             system(cmd.c_str());
+            #else
+            std::string arg_s = prefixPath + aln->name;
+            std::string arg_prefix = prefixPath + aln->name + "_BIC";
+
+            char* argv[] = {
+                "", 
+                "-s", &arg_s[0],
+                "-mset", &params.model_set[0],
+                "--prefix", &arg_prefix[0],
+                "-m", "MF",
+                "--fast",
+                "--safe",
+                "--redo",
+                "--seed", "0"
+            };
+            int argc = sizeof(argv) / sizeof(char*);
+            Params::addParams(argc, argv);
+            Checkpoint *checkpoint = new Checkpoint;
+            runPhyloAnalysis(Params::getInstance(), checkpoint);
+            Params::removeParams();
+            #endif
             inp = std::ifstream(prefixPath + aln->name + "_BIC.iqtree");
         }
         std::string line;
@@ -1180,12 +1202,12 @@ void SuperAlignment::splitPartitions(Params &params) {
     while (!q.empty()) {
         Alignment* aln = q.front();
         q.pop();
-
-        if (aln->getNSite() < BOUND_LEN) {
+        
+        if (aln->getNPattern() * aln->getNSeq() < partitionCost) {
             aln->printAlignment(IN_PHYLIP, (splitDir + aln->name).c_str());
             continue;
         }
-
+        
         // calculate rates by TIGER
         std::vector<double> rates = calcRate(aln);
         
@@ -1210,13 +1232,16 @@ void SuperAlignment::splitPartitions(Params &params) {
                 else sitesOfParts[1].push_back(i);
             }
         }
+
+        cout << "Split into " << sitesOfParts[0].size() << ", " << sitesOfParts[1].size() << ", " << sitesOfParts[2].size() << std::endl;
+
         // find best model for each subset
         std::vector<std::string> models = findBestModel(aln, sitesOfParts);
-        /*
+        
         for (auto &model : models) {
             std::cout << model << std::endl;
         }
-        */
+        
         const std::string treefile = prefixPath + aln->name + ".treefile";
         // calculate likelihood for each subset based on the best model
         std::vector<double> lh[3];
