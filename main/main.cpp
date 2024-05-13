@@ -2618,7 +2618,6 @@ int main(int argc, char *argv[]) {
             outError("Unknown file input format");
         }
     }
-
     time(&start_time);
     cout << "Date and Time: " << ctime(&start_time);
     try{

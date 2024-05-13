@@ -71,7 +71,7 @@ SuperAlignment::SuperAlignment(Params &params) : Alignment()
 
 }
 
-void SuperAlignment::readFromParams(Params &params, bool canSplit) {
+void SuperAlignment::readFromParams(Params &params) {
     if (isDirectory(params.partition_file)) {
         // reading all files in the directory
         readPartitionDir(params.partition_file, params.sequence_type, params.intype, params.model_name, params.remove_empty_seq);
@@ -157,7 +157,6 @@ void SuperAlignment::readFromParams(Params &params, bool canSplit) {
             outWarning("No parsimony-informative sites in partition " + (*it)->name);
         }
     }}
-    if (canSplit && params.split) splitPartitions(params);
 }
 
 void SuperAlignment::init(StrVector *sequence_names) {
@@ -884,6 +883,9 @@ void SuperAlignment::printBestPartitionRaxml(const char *filename) {
 }
 
 void SuperAlignment::splitPartitions(Params &params) {
+    double begin_wallclock_time = getRealTime();
+    double begin_cpu_time = getCPUTime();
+
     const int BOUND_LEN = 50;
 
     sort(partitions.begin(), partitions.end(), [](Alignment *a, Alignment *b) {
@@ -910,14 +912,11 @@ void SuperAlignment::splitPartitions(Params &params) {
 
     double partitionCost = computePartitionCost();
     
-    const std::string splitDir = string(params.out_prefix) + "/split/";
+    const std::string splitDir = string(params.out_prefix);
     const std::string prefixPath = string(params.out_prefix) + "/tmp/";
     
+    system(("rm -rf " + splitDir + "/*").c_str());   
     system(("mkdir " + prefixPath).c_str());
-    if (system(("test -d " + splitDir).c_str()) == 0) {
-        system(("rm -rf " + splitDir).c_str());
-    }
-    system(("mkdir " + splitDir).c_str());    
 
     auto calcRate = [&](Alignment* aln) {
         vector<double> rates;
@@ -1233,7 +1232,7 @@ void SuperAlignment::splitPartitions(Params &params) {
             }
         }
 
-        cout << "Split into " << sitesOfParts[0].size() << ", " << sitesOfParts[1].size() << ", " << sitesOfParts[2].size() << std::endl;
+        // cout << "Split into " << sitesOfParts[0].size() << ", " << sitesOfParts[1].size() << ", " << sitesOfParts[2].size() << std::endl;
 
         // find best model for each subset
         std::vector<std::string> models = findBestModel(aln, sitesOfParts);
@@ -1313,9 +1312,9 @@ void SuperAlignment::splitPartitions(Params &params) {
         delete partitions[i];
     }
     partitions.clear();
-    params.partition_file = new char[splitDir.size() + 1];
-    strcpy(params.partition_file, splitDir.c_str());
-    readFromParams(params, false);
+    cout << "Split partitions took "
+        << convert_time(getRealTime() - begin_wallclock_time) << " (of wall-clock time) "
+        << convert_time(getCPUTime() - begin_cpu_time) << " (of CPU time)" << endl;
 }
 
 void SuperAlignment::linkSubAlignment(int part) {
