@@ -912,11 +912,17 @@ void SuperAlignment::splitPartitions(Params &params) {
 
     double partitionCost = computePartitionCost();
     
-    const std::string splitDir = string(params.out_prefix);
+    const std::string splitDir = string(params.out_prefix) + "/split/";
     const std::string prefixPath = string(params.out_prefix) + "/tmp/";
     
-    system(("rm -rf " + splitDir + "/*").c_str());   
+    if (system(("test -d " + prefixPath).c_str()) == 0) {
+        system(("rm -rf " + prefixPath).c_str());
+    }
     system(("mkdir " + prefixPath).c_str());
+    if (system(("test -d " + splitDir).c_str()) == 0) {
+        system(("rm -rf " + splitDir).c_str());
+    }
+    system(("mkdir " + splitDir).c_str());    
 
     auto calcRate = [&](Alignment* aln) {
         vector<double> rates;
