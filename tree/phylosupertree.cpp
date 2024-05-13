@@ -23,6 +23,9 @@
 #include "main/phylotesting.h"
 #include "model/partitionmodel.h"
 #include "utils/MPIHelper.h"
+#include "utils/tools.h"
+#include <queue>
+#include <functional>
 
 PhyloSuperTree::PhyloSuperTree()
  : IQTree()
