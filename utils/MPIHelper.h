@@ -240,12 +240,20 @@ public:
 //        numTreeReceived = 0;
 //        numNNISearch = 0;
     }
-    int *shared_counter;
+
+private:
+#ifdef _IQTREE_MPI
     MPI_Win shmwin;
+#endif
+    int *shared_counter;
+
+public:
+    int getTask();
     int increment(int id = 0);
     int decrement(int id = 0);
     int getSharedCounter(int id = 0);
     void setTask(int delta);
+
 private:
     int numTreeSent;
 
