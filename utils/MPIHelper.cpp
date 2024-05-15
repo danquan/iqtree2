@@ -72,10 +72,7 @@ int MPIHelper::decrement(int id) {
     MPI_Win_unlock(0, shmwin);
     return ret;
 #else
-    if (!shared_counter)
-        shared_counter = new int(0);
-
-    return *shared_counter++;
+    assert(0);
 #endif
 }
 
@@ -86,10 +83,7 @@ void MPIHelper::setTask(int delta) {
     MPI_Accumulate(&delta, 1, MPI_INT, 0, 0, 1, MPI_INT, MPI_SUM, shmwin);
     MPI_Win_unlock(0, shmwin);
 #else
-    if (!shared_counter)
-        shared_counter = new int(0);
-
-    *shared_counter += delta;
+    assert(0);
 #endif
 }
 
@@ -105,7 +99,8 @@ int MPIHelper::getSharedCounter(int id) {
 
 void MPIHelper::finalize() {
 #ifdef _IQTREE_MPI
-    MPI_Win_free(&shmwin);
+    if (Params::getInstance().fpqmaker || Params::getInstance().split)
+        MPI_Win_free(&shmwin);
     MPI_Finalize();
 #endif
 }

@@ -248,7 +248,6 @@ private:
     int *shared_counter;
 
 public:
-    int getTask();
     int increment(int id = 0);
     int decrement(int id = 0);
     int getSharedCounter(int id = 0);

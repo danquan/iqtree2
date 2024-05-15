@@ -1206,7 +1206,7 @@ void SuperAlignment::splitPartitions(Params &params) {
         }
         Alignment* aln = new Alignment;
         int id = MPIHelper::getInstance().increment(FRONT);
-        printf("Process %d is working on %d\n", MPIHelper::getInstance().getProcessID(), id);
+        // printf("Process %d is working on %d\n", MPIHelper::getInstance().getProcessID(), id);
         MPIHelper::getInstance().increment(WORKING_COUNT);
         vector<string> files;
         getFilesInDir(queuePath.c_str(), files);
@@ -1318,8 +1318,8 @@ void SuperAlignment::splitPartitions(Params &params) {
                 if (oldBic >= newBic) {
                     for (auto subAln : subAlns) {
                         int id = MPIHelper::getInstance().increment(BACK);
-                        std::string filename = queuePath + aln->name + "_" + std::to_string(id);
-                        aln->printAlignment(IN_PHYLIP, filename.c_str());
+                        std::string filename = queuePath + subAln->name + "_" + std::to_string(id);
+                        subAln->printAlignment(IN_PHYLIP, filename.c_str());
                     }
                 } else aln->printAlignment(IN_PHYLIP, (splitDir + aln->name).c_str());  
             }
