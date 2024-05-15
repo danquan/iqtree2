@@ -234,10 +234,17 @@ public:
 //        numTreeReceived = 0;
 //        numNNISearch = 0;
     }
-    int *shared_counter;
+
+private:
+#ifdef _IQTREE_MPI
     MPI_Win shmwin;
+#endif
+    int *shared_counter;
+
+public:
     int getTask();
     void setTask(int delta);
+
 private:
     int numTreeSent;
 

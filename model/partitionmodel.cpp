@@ -319,16 +319,22 @@ double PartitionModel::targetFunk(double x[]) {
                 part_model->fixParameters(fixed);    
             }
         }
-        MPI_Barrier(MPI_COMM_WORLD);
+
+        #ifdef _IQTREE_MPI
+            MPI_Barrier(MPI_COMM_WORLD);
+        #endif
+
         if (MPIHelper::getInstance().isMaster()) {
             MPIHelper::getInstance().setTask(- ntrees - MPIHelper::getInstance().getNumProcesses() * Params::getInstance().num_threads);
         }
-        MPI_Barrier(MPI_COMM_WORLD);
+
         #ifdef _IQTREE_MPI
+            MPI_Barrier(MPI_COMM_WORLD);
             results = MPIHelper::getInstance().sumProcs(results);
         #endif
             for (auto e : results)
              res += e;
+
     } else if (Params::getInstance().pqmaker) {
         /*----------------------------------- Run pQMaker here ----------------------------------*/
         DoubleVector results(tree->size());
@@ -533,7 +539,10 @@ double PartitionModel::optimizeParameters(int fixed_len, bool write_info, double
 
     for (int step = 0; step < Params::getInstance().model_opt_steps; step++) {
         tree_lh = 0.0;
-        if (Params::getInstance().pqmaker || Params::getInstance().fpqmaker) tree_lhs = DoubleVector(ntrees, 0.0);
+        if (Params::getInstance().pqmaker || Params::getInstance().fpqmaker) {
+            tree_lhs = DoubleVector(ntrees, 0.0);
+        }
+
         if (tree->part_order.empty()) tree->computePartitionOrder();
 
         if (false && Params::getInstance().fpqmaker) {
@@ -581,13 +590,17 @@ double PartitionModel::optimizeParameters(int fixed_len, bool write_info, double
                 // #endif // _IQTREE_MPI
             }
 
-            MPI_Barrier(MPI_COMM_WORLD);
+            #ifdef _IQTREE_MPI
+                MPI_Barrier(MPI_COMM_WORLD);
+            #endif
             
             if (MPIHelper::getInstance().isMaster()) {
                 MPIHelper::getInstance().setTask(- ntrees * MPIHelper::getInstance().getNumProcesses());
             }
 
-            MPI_Barrier(MPI_COMM_WORLD);
+            #ifdef _IQTREE_MPI
+                MPI_Barrier(MPI_COMM_WORLD);
+            #endif
 
         //return ModelFactory::optimizeParameters(fixed_len, write_info);
         #ifdef _IQTREE_MPI
@@ -682,7 +695,7 @@ double PartitionModel::optimizeParameters(int fixed_len, bool write_info, double
             }
             //return ModelFactory::optimizeParameters(fixed_len, write_info);
         }
-        MPI_Barrier(MPI_COMM_WORLD);
+
         if (!isLinkedModel())
             break;
 
