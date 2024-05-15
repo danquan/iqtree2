@@ -614,6 +614,8 @@ public:
     static void addParams(int argc, char *argv[]);
     static void removeParams();
 
+    bool lockMPI = false;
+
     /**
      * Parallel for QMaker
     */
