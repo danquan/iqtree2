@@ -50,6 +50,8 @@ public:
     /** initialize MPI */
     void init(int argc, char *argv[]);
     
+    void initSharedMemory();
+
     /** finalize MPI */
     void finalize();
     
@@ -59,6 +61,7 @@ public:
     ~MPIHelper();
 
     int getNumProcesses() const {
+        if (Params::getInstance().lockMPI) return 1;
         return numProcesses;
     }
 
@@ -67,14 +70,17 @@ public:
     }
 
     int getProcessID() const {
+        if (Params::getInstance().lockMPI) return 0;
         return processID;
     }
 
     bool isMaster() const {
+        if (Params::getInstance().lockMPI) return 1;
         return processID == PROC_MASTER;
     }
 
     bool isWorker() const {
+        if (Params::getInstance().lockMPI) return 0;
         return processID != PROC_MASTER;
     }
 
@@ -243,6 +249,9 @@ private:
 
 public:
     int getTask();
+    int increment(int id = 0);
+    int decrement(int id = 0);
+    int getSharedCounter(int id = 0);
     void setTask(int delta);
 
 private:

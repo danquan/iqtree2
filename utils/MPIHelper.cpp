@@ -31,22 +31,46 @@ void MPIHelper::init(int argc, char *argv[]) {
     setNumTreeReceived(0);
     setNumTreeSent(0);
     setNumNNISearch(0);
-
-    MPI_Win_allocate(sizeof(int), sizeof(int), MPI_INFO_NULL, MPI_COMM_WORLD, &shared_counter, &shmwin);
-    if (isMaster()) {
-        *shared_counter = 0;
-    }
-    MPI_Barrier(MPI_COMM_WORLD);
 #endif
 }
 
-int MPIHelper::getTask() {
+void MPIHelper::initSharedMemory() {
 #ifdef _IQTREE_MPI
-    int one = 1, id;
+    if (Params::getInstance().fpqmaker) {
+        MPI_Win_allocate(sizeof(int), sizeof(int), MPI_INFO_NULL, MPI_COMM_WORLD, &shared_counter, &shmwin);
+        if (isMaster()) {
+            shared_counter[0] = 0;
+        }
+    }
+    
+    if (Params::getInstance().split) {
+        MPI_Win_allocate(sizeof(int) * 3, sizeof(int), MPI_INFO_NULL, MPI_COMM_WORLD, &shared_counter, &shmwin);
+        if (isMaster()) {
+            shared_counter[0] = 0;
+            shared_counter[1] = 0;
+        }
+    }
+    barrier();
+#endif
+}
+
+int MPIHelper::increment(int id) {
+#ifdef _IQTREE_MPI
+    int one = 1, ret;
     MPI_Win_lock(MPI_LOCK_EXCLUSIVE, 0, 0, shmwin);
-    MPI_Fetch_and_op(&one, &id, MPI_INT, 0, 0, MPI_SUM, shmwin);
+    MPI_Fetch_and_op(&one, &ret, MPI_INT, 0, id, MPI_SUM, shmwin);
     MPI_Win_unlock(0, shmwin);
-    return id;
+    return ret;
+#endif
+}
+
+int MPIHelper::decrement(int id) {
+#ifdef _IQTREE_MPI
+    int minus_one = -1, ret;
+    MPI_Win_lock(MPI_LOCK_EXCLUSIVE, 0, 0, shmwin);
+    MPI_Fetch_and_op(&minus_one, &ret, MPI_INT, 0, id, MPI_SUM, shmwin);
+    MPI_Win_unlock(0, shmwin);
+    return ret;
 #else
     if (!shared_counter)
         shared_counter = new int(0);
@@ -54,6 +78,7 @@ int MPIHelper::getTask() {
     return *shared_counter++;
 #endif
 }
+
 
 void MPIHelper::setTask(int delta) {
 #ifdef _IQTREE_MPI
@@ -65,6 +90,16 @@ void MPIHelper::setTask(int delta) {
         shared_counter = new int(0);
 
     *shared_counter += delta;
+#endif
+}
+
+int MPIHelper::getSharedCounter(int id) {
+#ifdef _IQTREE_MPI
+    int ret;
+    MPI_Win_lock(MPI_LOCK_EXCLUSIVE, 0, 0, shmwin);
+    MPI_Get(&ret, 1, MPI_INT, 0, id, 1, MPI_INT, shmwin);
+    MPI_Win_unlock(0, shmwin);
+    return ret;
 #endif
 }
 

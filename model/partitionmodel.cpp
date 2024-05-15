@@ -305,7 +305,7 @@ double PartitionModel::targetFunk(double x[]) {
             while (true) {
                 int i;
                 #pragma omp critical
-                i = MPIHelper::getInstance().getTask();
+                i = MPIHelper::getInstance().increment();
             
                 if (i >= ntrees) {
                     break;
@@ -553,7 +553,7 @@ double PartitionModel::optimizeParameters(int fixed_len, bool write_info, double
                 int part;
                 #pragma omp critical
                 {
-                    part = MPIHelper::getInstance().getTask();
+                    part = MPIHelper::getInstance().increment();
                 }
 
                 if (part >= ntrees) continue;

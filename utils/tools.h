@@ -609,7 +609,12 @@ private:
     // make a copy of params?
     //Params (Params const&) {}; // Disable copy constructor
     //void operator=(Params const&) {}; // Disable assignment
+    static std::vector<Params*> instances;
 public:
+    static void addParams(int argc, char *argv[]);
+    static void removeParams();
+
+    bool lockMPI = false;
 
     /**
      * Parallel for QMaker
@@ -620,6 +625,11 @@ public:
      * Optimize pQMaker using shared memory
     */
     bool fpqmaker;
+
+    /**
+     *  Optimize pQMaker by splitting alignments
+     */
+    bool split;
 
     /**
     *  Fast and accurate optimiation for alpha and p_invar

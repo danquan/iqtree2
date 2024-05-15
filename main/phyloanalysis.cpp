@@ -4194,201 +4194,205 @@ void runPhyloAnalysis(Params &params, Checkpoint *checkpoint, IQTree *&tree, Ali
         }
     }
 
-    if (params.symtest) {
-        doSymTest(alignment, params);
-    }
-
-    if (params.print_aln_info) {
-        string site_info_file = string(params.out_prefix) + ".alninfo";
-        alignment->printSiteInfo(site_info_file.c_str());
-        cout << "Alignment sites statistics printed to " << site_info_file << endl;
-    }
-
-    /*************** initialize tree ********************/
-    bool isTreeMix = isTreeMixture(params);
-    
-    if (params.optimize_params_use_hmm && !isTreeMix) {
-        outError("option '-hmmster' is only available for tree mixture model");
-    }
-    
-    if (isTreeMix) {
-        if (params.optimize_params_use_hmm)
-            cout << "HMMSTER ";
-        // tree-mixture model
-        cout << "Tree-mixture model" << endl;
-
-        // the minimum gamma shape should be greater than MIN_GAMMA_SHAPE_TREEMIX for tree mixture model
-        if (params.min_gamma_shape < MIN_GAMMA_SHAPE_TREEMIX) {
-            if (params.min_gamma_shape != MIN_GAMMA_SHAPE)
-                cout << "The minimum value for Gamma shape is changed to " << MIN_GAMMA_SHAPE_TREEMIX << endl;
-            params.min_gamma_shape = MIN_GAMMA_SHAPE_TREEMIX;
-        }
-
-        if (params.user_file == NULL) {
-            // get the number after "+T" for tree-mixture model
-            int treeNum = getTreeMixNum(params);
-            if (treeNum == 0) {
-                outError("Specify the number of trees in the model or input the tree file using the option '-te' for tree-mixture model");
-            }
-            tree = newIQTreeMix(params, alignment, treeNum); // tree mixture model
-        } else {
-            tree = newIQTreeMix(params, alignment); // tree mixture model
-        }
-        if (params.compute_ml_tree_only) {
-            outError("option compute_ml_tree_only cannot be set for tree-mixture model");
-        }
-        tree = newIQTreeMix(params, alignment); // tree mixture model
+    if (params.split && params.partition_type == TOPO_UNLINKED) {
+        static_cast<SuperAlignment*>(alignment)->splitPartitions(params);
     } else {
-        tree = newIQTree(params, alignment);
-    }
+        if (params.symtest) {
+            doSymTest(alignment, params);
+        }
 
-    tree->setCheckpoint(checkpoint);
-    if (isTreeMix) {
-        ((IQTreeMix*) tree)->setMinBranchLen(params);
-    } else if (params.min_branch_length <= 0.0) {
-        params.min_branch_length = 1e-6;
-        if (!tree->isSuperTree() && tree->getAlnNSite() >= 100000) {
-            params.min_branch_length = 0.1 / (tree->getAlnNSite());
-            tree->num_precision = max((int)ceil(-log10(Params::getInstance().min_branch_length))+1, 6);
-            cout.precision(12);
-            cout << "NOTE: minimal branch length is reduced to " << params.min_branch_length << " for long alignment" << endl;
-            cout.precision(3);
+        if (params.print_aln_info) {
+            string site_info_file = string(params.out_prefix) + ".alninfo";
+            alignment->printSiteInfo(site_info_file.c_str());
+            cout << "Alignment sites statistics printed to " << site_info_file << endl;
+        }
+
+        /*************** initialize tree ********************/
+        bool isTreeMix = isTreeMixture(params);
+        
+        if (params.optimize_params_use_hmm && !isTreeMix) {
+            outError("option '-hmmster' is only available for tree mixture model");
+        }
+        
+        if (isTreeMix) {
+            if (params.optimize_params_use_hmm)
+                cout << "HMMSTER ";
+            // tree-mixture model
+            cout << "Tree-mixture model" << endl;
+
+            // the minimum gamma shape should be greater than MIN_GAMMA_SHAPE_TREEMIX for tree mixture model
+            if (params.min_gamma_shape < MIN_GAMMA_SHAPE_TREEMIX) {
+                if (params.min_gamma_shape != MIN_GAMMA_SHAPE)
+                    cout << "The minimum value for Gamma shape is changed to " << MIN_GAMMA_SHAPE_TREEMIX << endl;
+                params.min_gamma_shape = MIN_GAMMA_SHAPE_TREEMIX;
+            }
+
+            if (params.user_file == NULL) {
+                // get the number after "+T" for tree-mixture model
+                int treeNum = getTreeMixNum(params);
+                if (treeNum == 0) {
+                    outError("Specify the number of trees in the model or input the tree file using the option '-te' for tree-mixture model");
+                }
+                tree = newIQTreeMix(params, alignment, treeNum); // tree mixture model
+            } else {
+                tree = newIQTreeMix(params, alignment); // tree mixture model
+            }
+            if (params.compute_ml_tree_only) {
+                outError("option compute_ml_tree_only cannot be set for tree-mixture model");
+            }
+            tree = newIQTreeMix(params, alignment); // tree mixture model
+        } else {
+            tree = newIQTree(params, alignment);
+        }
+
+        tree->setCheckpoint(checkpoint);
+        if (isTreeMix) {
+            ((IQTreeMix*) tree)->setMinBranchLen(params);
+        } else if (params.min_branch_length <= 0.0) {
+            params.min_branch_length = 1e-6;
+            if (!tree->isSuperTree() && tree->getAlnNSite() >= 100000) {
+                params.min_branch_length = 0.1 / (tree->getAlnNSite());
+                tree->num_precision = max((int)ceil(-log10(Params::getInstance().min_branch_length))+1, 6);
+                cout.precision(12);
+                cout << "NOTE: minimal branch length is reduced to " << params.min_branch_length << " for long alignment" << endl;
+                cout.precision(3);
+            }
+            // Increase the minimum branch length if PoMo is used.
+            if (alignment->seq_type == SEQ_POMO) {
+                params.min_branch_length *= alignment->virtual_pop_size * alignment->virtual_pop_size;
+                cout.precision(12);
+                cout << "NOTE: minimal branch length is increased to " << params.min_branch_length << " because PoMo infers number of mutations and frequency shifts" << endl;
+                cout.precision(3);
+            }
         }
         // Increase the minimum branch length if PoMo is used.
         if (alignment->seq_type == SEQ_POMO) {
-            params.min_branch_length *= alignment->virtual_pop_size * alignment->virtual_pop_size;
-            cout.precision(12);
-            cout << "NOTE: minimal branch length is increased to " << params.min_branch_length << " because PoMo infers number of mutations and frequency shifts" << endl;
+            params.max_branch_length *= alignment->virtual_pop_size * alignment->virtual_pop_size;
+            cout.precision(1);
+            cout << "NOTE: maximal branch length is increased to " << params.max_branch_length << " because PoMo infers number of mutations and frequency shifts" << endl;
             cout.precision(3);
         }
-    }
-    // Increase the minimum branch length if PoMo is used.
-    if (alignment->seq_type == SEQ_POMO) {
-        params.max_branch_length *= alignment->virtual_pop_size * alignment->virtual_pop_size;
-        cout.precision(1);
-        cout << "NOTE: maximal branch length is increased to " << params.max_branch_length << " because PoMo infers number of mutations and frequency shifts" << endl;
-        cout.precision(3);
-    }
 
 
-    if (params.concatenate_aln) {
-        Alignment aln(params.concatenate_aln, params.sequence_type, params.intype, params.model_name);
-        cout << "Concatenating " << params.aln_file << " with " << params.concatenate_aln << " ..." << endl;
-        alignment->concatenateAlignment(&aln);
-    }
-
-    if (params.constraint_tree_file) {
-        if (isTreeMix) {
-            outError("Constraint tree does not work with tree-mixture model");
+        if (params.concatenate_aln) {
+            Alignment aln(params.concatenate_aln, params.sequence_type, params.intype, params.model_name);
+            cout << "Concatenating " << params.aln_file << " with " << params.concatenate_aln << " ..." << endl;
+            alignment->concatenateAlignment(&aln);
         }
-        cout << "Reading constraint tree " << params.constraint_tree_file << "..." << endl;
-        tree->constraintTree.readConstraint(params.constraint_tree_file, alignment->getSeqNames());
-        if (params.start_tree == STT_PLL_PARSIMONY)
-            params.start_tree = STT_PARSIMONY;
-        else if (params.start_tree == STT_BIONJ)
-            outError("Constraint tree does not work with -t BIONJ");
-        if (params.num_bootstrap_samples || params.gbo_replicates)
-            cout << "INFO: Constraint tree will be applied to ML tree and all bootstrap trees." << endl;
-    }
 
-    if (params.compute_seq_identity_along_tree) {
-        if (isTreeMix) {
-            outError("Computing sequence identity does not work with tree-mixture model");
-        }
-        if (!params.user_file)
-            outError("Please supply a user tree file!");
-        tree->readTree(params.user_file, params.is_rooted);
-        if (!tree->rooted && !params.root) {
-            outError("Tree is unrooted, thus you have to specify a root with -o option");
-        }
-        tree->setAlignment(tree->aln);
-        if (!tree->rooted)
-            tree->setRootNode(params.root);
-        tree->computeSeqIdentityAlongTree();
-        if (verbose_mode >= VB_MED)
-            tree->drawTree(cout);
-        string out_tree = (string)params.out_prefix + ".seqident_tree";
-        tree->printTree(out_tree.c_str());
-        cout << "Tree with sequence identity printed to " << out_tree << endl;
-    } else if (params.aln_output) {
-        if (isTreeMix) {
-            outError("Coverting alignment feature does not work with tree-mixture model");
-        }
-        /************ convert alignment to other format and write to output file *************/
-        convertAlignment(params, tree);
-    } else if (params.gbo_replicates > 0 && params.user_file && params.second_tree) {
-        // run one of the UFBoot analysis
-//        runGuidedBootstrap(params, alignment, *tree);
-        outError("Obsolete feature");
-    } else if (params.avh_test) {
-        // run one of the wondering test for Arndt
-//        runAvHTest(params, alignment, *tree);
-        outError("Obsolete feature");
-    } else if (params.bootlh_test) {
-        // run Arndt's plot of tree likelihoods against bootstrap alignments
-//        runBootLhTest(params, alignment, *tree);
-        outError("Obsolete feature");
-    } else if (params.num_bootstrap_samples == 0) {
-    /********************************************************************************
-                    THE MAIN MAXIMUM LIKELIHOOD TREE RECONSTRUCTION
-     ********************************************************************************/
-        ModelCheckpoint *model_info = new ModelCheckpoint;
-        alignment->checkGappySeq(params.remove_empty_seq);
-
-        // remove identical sequences
-        if (params.ignore_identical_seqs) {
-            tree->removeIdenticalSeqs(params);
-            if (tree->removed_seqs.size() > 0 && MPIHelper::getInstance().isMaster() && (params.suppress_output_flags & OUT_UNIQUESEQ) == 0) {
-                string filename = (string)params.out_prefix + ".uniqueseq.phy";
-                tree->aln->printAlignment(params.aln_output_format, filename.c_str());
-                cout << endl << "For your convenience alignment with unique sequences printed to " << filename << endl;
+        if (params.constraint_tree_file) {
+            if (isTreeMix) {
+                outError("Constraint tree does not work with tree-mixture model");
             }
+            cout << "Reading constraint tree " << params.constraint_tree_file << "..." << endl;
+            tree->constraintTree.readConstraint(params.constraint_tree_file, alignment->getSeqNames());
+            if (params.start_tree == STT_PLL_PARSIMONY)
+                params.start_tree = STT_PARSIMONY;
+            else if (params.start_tree == STT_BIONJ)
+                outError("Constraint tree does not work with -t BIONJ");
+            if (params.num_bootstrap_samples || params.gbo_replicates)
+                cout << "INFO: Constraint tree will be applied to ML tree and all bootstrap trees." << endl;
         }
-        alignment = NULL; // from now on use tree->aln instead
 
-        startTreeReconstruction(params, tree, *model_info);
-        // call main tree reconstruction
-        if (params.num_runs == 1) {
-            runTreeReconstruction(params, tree);
+        if (params.compute_seq_identity_along_tree) {
+            if (isTreeMix) {
+                outError("Computing sequence identity does not work with tree-mixture model");
+            }
+            if (!params.user_file)
+                outError("Please supply a user tree file!");
+            tree->readTree(params.user_file, params.is_rooted);
+            if (!tree->rooted && !params.root) {
+                outError("Tree is unrooted, thus you have to specify a root with -o option");
+            }
+            tree->setAlignment(tree->aln);
+            if (!tree->rooted)
+                tree->setRootNode(params.root);
+            tree->computeSeqIdentityAlongTree();
+            if (verbose_mode >= VB_MED)
+                tree->drawTree(cout);
+            string out_tree = (string)params.out_prefix + ".seqident_tree";
+            tree->printTree(out_tree.c_str());
+            cout << "Tree with sequence identity printed to " << out_tree << endl;
+        } else if (params.aln_output) {
+            if (isTreeMix) {
+                outError("Coverting alignment feature does not work with tree-mixture model");
+            }
+            /************ convert alignment to other format and write to output file *************/
+            convertAlignment(params, tree);
+        } else if (params.gbo_replicates > 0 && params.user_file && params.second_tree) {
+            // run one of the UFBoot analysis
+    //        runGuidedBootstrap(params, alignment, *tree);
+            outError("Obsolete feature");
+        } else if (params.avh_test) {
+            // run one of the wondering test for Arndt
+    //        runAvHTest(params, alignment, *tree);
+            outError("Obsolete feature");
+        } else if (params.bootlh_test) {
+            // run Arndt's plot of tree likelihoods against bootstrap alignments
+    //        runBootLhTest(params, alignment, *tree);
+            outError("Obsolete feature");
+        } else if (params.num_bootstrap_samples == 0) {
+        /********************************************************************************
+                        THE MAIN MAXIMUM LIKELIHOOD TREE RECONSTRUCTION
+        ********************************************************************************/
+            ModelCheckpoint *model_info = new ModelCheckpoint;
+            alignment->checkGappySeq(params.remove_empty_seq);
+
+            // remove identical sequences
+            if (params.ignore_identical_seqs) {
+                tree->removeIdenticalSeqs(params);
+                if (tree->removed_seqs.size() > 0 && MPIHelper::getInstance().isMaster() && (params.suppress_output_flags & OUT_UNIQUESEQ) == 0) {
+                    string filename = (string)params.out_prefix + ".uniqueseq.phy";
+                    tree->aln->printAlignment(params.aln_output_format, filename.c_str());
+                    cout << endl << "For your convenience alignment with unique sequences printed to " << filename << endl;
+                }
+            }
+            alignment = NULL; // from now on use tree->aln instead
+
+            startTreeReconstruction(params, tree, *model_info);
+            // call main tree reconstruction
+            if (params.num_runs == 1) {
+                runTreeReconstruction(params, tree);
+            } else {
+                runMultipleTreeReconstruction(params, tree->aln, tree);
+            }
+            
+            if (params.ancestral_site_concordance)
+                tree->computeAllAncestralSiteConcordance();
+            
+            if (MPIHelper::getInstance().isMaster()) {
+                reportPhyloAnalysis(params, *tree, *model_info);
+            }
+
+            // reinsert identical sequences
+            if (tree->removed_seqs.size() > 0) {
+                // BUG FIX: dont use reinsertIdenticalSeqs anymore
+                tree->insertTaxa(tree->removed_seqs, tree->twin_seqs);
+                tree->printResultTree();
+            }
+            delete model_info;
+            
+            if (params.dating_method != "") {
+                doTimeTree(tree);
+            }
+
         } else {
-            runMultipleTreeReconstruction(params, tree->aln, tree);
-        }
-        
-        if (params.ancestral_site_concordance)
-            tree->computeAllAncestralSiteConcordance();
-        
-        if (MPIHelper::getInstance().isMaster()) {
-            reportPhyloAnalysis(params, *tree, *model_info);
+            // the classical non-parameter bootstrap (SBS)
+    //        if (params.model_name.find("LINK") != string::npos || params.model_name.find("MERGE") != string::npos)
+    //            outError("-m TESTMERGE is not allowed when doing standard bootstrap. Please first\nfind partition scheme on the original alignment and use it for bootstrap analysis");
+            if (alignment->getNSeq() < 4)
+                outError("It makes no sense to perform bootstrap with less than 4 sequences.");
+            runStandardBootstrap(params, alignment, tree);
         }
 
-        // reinsert identical sequences
-        if (tree->removed_seqs.size() > 0) {
-            // BUG FIX: dont use reinsertIdenticalSeqs anymore
-            tree->insertTaxa(tree->removed_seqs, tree->twin_seqs);
-            tree->printResultTree();
-        }
-        delete model_info;
-        
-        if (params.dating_method != "") {
-            doTimeTree(tree);
-        }
+    //    if (params.upper_bound) {
+    //            UpperBounds(&params, alignment, tree);
+    //    }
 
-    } else {
-        // the classical non-parameter bootstrap (SBS)
-//        if (params.model_name.find("LINK") != string::npos || params.model_name.find("MERGE") != string::npos)
-//            outError("-m TESTMERGE is not allowed when doing standard bootstrap. Please first\nfind partition scheme on the original alignment and use it for bootstrap analysis");
-        if (alignment->getNSeq() < 4)
-            outError("It makes no sense to perform bootstrap with less than 4 sequences.");
-        runStandardBootstrap(params, alignment, tree);
-    }
-
-//    if (params.upper_bound) {
-//            UpperBounds(&params, alignment, tree);
-//    }
-
-    if(verbose_mode >= VB_MED){
-        if(tree->isSuperTree() && params.partition_type != BRLEN_OPTIMIZE){
-            ((PhyloSuperTreePlen*) tree)->printNNIcasesNUM();
+        if(verbose_mode >= VB_MED){
+            if(tree->isSuperTree() && params.partition_type != BRLEN_OPTIMIZE){
+                ((PhyloSuperTreePlen*) tree)->printNNIcasesNUM();
+            }
         }
     }
 
@@ -4397,18 +4401,19 @@ void runPhyloAnalysis(Params &params, Checkpoint *checkpoint, IQTree *&tree, Ali
 }
 
 void runPhyloAnalysis(Params &params, Checkpoint *checkpoint) {
-    IQTree *tree;
-    Alignment *alignment;
+    IQTree *tree = NULL;
+    Alignment *alignment = NULL;
     
     runPhyloAnalysis(params, checkpoint, tree, alignment);
-
-    // 2015-09-22: bug fix, move this line to before deleting tree
-    alignment = tree->aln;
-    delete tree;
-    // BUG FIX: alignment can be changed, should delete tree->aln instead
-    // 2015-09-22: THIS IS STUPID: after deleting tree, one cannot access tree->aln anymore
-//    alignment = tree->aln;
-    delete alignment;
+    if (tree != NULL) {
+        // 2015-09-22: bug fix, move this line to before deleting tree
+        alignment = tree->aln;
+        if (tree != NULL) delete tree;
+        // BUG FIX: alignment can be changed, should delete tree->aln instead
+        // 2015-09-22: THIS IS STUPID: after deleting tree, one cannot access tree->aln anymore
+    //    alignment = tree->aln;
+        if (alignment != NULL) delete alignment;
+    }
 }
 
 /**
