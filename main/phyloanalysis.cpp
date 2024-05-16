@@ -2901,7 +2901,7 @@ void runTreeReconstruction(Params &params, IQTree* &iqtree) {
 //    if (iqtree.isSuperTree())
 //            ((PhyloSuperTree*) iqtree)->mapTrees();
 
-    if (!MPIHelper::getInstance().isMaster()) {
+    if (!MPIHelper::getInstance().isMaster() && !params.non_mpi_treesearch) {
         delete[] pattern_lh;
         return;
     }
@@ -2939,7 +2939,9 @@ void runTreeReconstruction(Params &params, IQTree* &iqtree) {
     }
     if (iqtree->isSuperTree()) {
         ((PhyloSuperTree*) iqtree)->computeBranchLengths();
-        ((PhyloSuperTree*) iqtree)->printBestPartitionParams((string(params.out_prefix) + ".best_model.nex").c_str());
+        // ((PhyloSuperTree*) iqtree)->printBestPartitionParams((string(params.out_prefix) + ".best_model.nex").c_str());
+        // if (MPIHelper::getInstance().isWorker())
+        ((PhyloSuperTree*) iqtree)->printBestPartitionParamsMPI((string(params.out_prefix) + ".best_model.nex").c_str());
     }
 
     cout << "BEST SCORE FOUND : " << iqtree->getCurScore() << endl;

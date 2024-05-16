@@ -475,6 +475,8 @@ public:
      */
     void printBestPartitionParams(const char *filename);
 
+    void printBestPartitionParamsMPI(const char *filename);
+
     
     /** True when mixed codon with other data type */
     bool rescale_codon_brlen;
