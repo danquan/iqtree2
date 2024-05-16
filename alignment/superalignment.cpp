@@ -1204,10 +1204,10 @@ void SuperAlignment::splitPartitions(Params &params) {
                 continue;
             }
         }
+        MPIHelper::getInstance().increment(WORKING_COUNT);
         Alignment* aln = new Alignment;
         int id = MPIHelper::getInstance().increment(FRONT);
-        // printf("Process %d is working on %d\n", MPIHelper::getInstance().getProcessID(), id);
-        MPIHelper::getInstance().increment(WORKING_COUNT);
+        
         vector<string> files;
         getFilesInDir(queuePath.c_str(), files);
         for (auto &file : files) {
@@ -1216,11 +1216,12 @@ void SuperAlignment::splitPartitions(Params &params) {
                 aln->name = file.substr(0, file.size() - std::to_string(id).size() - 1);
                 aln->model_name = params.model_name;
                 aln->aln_file = queuePath + file;
+                printf("Process %d: %s\n", MPIHelper::getInstance().getProcessID(), aln->name.c_str());
                 break;
             }
         }
         
-        if (aln->getNPattern() * aln->getNSeq() < partitionCost) {
+        if (false && aln->getNPattern() * aln->getNSeq() < partitionCost) {
             aln->printAlignment(IN_PHYLIP, (splitDir + aln->name).c_str());
         } else {
             // calculate rates by TIGER
@@ -1247,11 +1248,12 @@ void SuperAlignment::splitPartitions(Params &params) {
                     else sitesOfParts[1].push_back(i);
                 }
             }
-
+            printf("Process %d: %d %d %d\n", MPIHelper::getInstance().getProcessID(), sitesOfParts[0].size(), sitesOfParts[1].size(), sitesOfParts[2].size());
             // std::cout << "Split into " << sitesOfParts[0].size() << ", " << sitesOfParts[1].size() << ", " << sitesOfParts[2].size() << std::endl;
 
             // find best model for each subset
             std::vector<std::string> models = findBestModel(aln, sitesOfParts);
+            printf("Process %d: %s %s %s\n", MPIHelper::getInstance().getProcessID(), models[0].c_str(), models[1].c_str(), models[2].c_str());
             /*
             for (auto &model : models) {
                 std::cout << model << std::endl;
@@ -1324,7 +1326,7 @@ void SuperAlignment::splitPartitions(Params &params) {
                 } else aln->printAlignment(IN_PHYLIP, (splitDir + aln->name).c_str());  
             }
         }
-        
+        printf("Process %d: Done %s\n", MPIHelper::getInstance().getProcessID(), aln->name.c_str());
         MPIHelper::getInstance().decrement(WORKING_COUNT);
     }
     for (int i = 0; i < partitions.size(); ++i) {
