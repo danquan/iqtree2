@@ -1221,7 +1221,7 @@ void SuperAlignment::splitPartitions(Params &params) {
             }
         }
         
-        if (false && aln->getNPattern() * aln->getNSeq() < partitionCost) {
+        if (aln->getNPattern() * aln->getNSeq() < partitionCost) {
             aln->printAlignment(IN_PHYLIP, (splitDir + aln->name).c_str());
         } else {
             // calculate rates by TIGER
