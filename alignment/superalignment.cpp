@@ -1204,9 +1204,15 @@ void SuperAlignment::splitPartitions(Params &params) {
                 continue;
             }
         }
-        MPIHelper::getInstance().increment(WORKING_COUNT);
+        int id = -1;
+        MPIHelper::getInstance().lock();
+        if (MPIHelper::getInstance().getSharedCounter(FRONT, false) < MPIHelper::getInstance().getSharedCounter(BACK, false)) {
+            id = MPIHelper::getInstance().increment(FRONT, false);
+            MPIHelper::getInstance().increment(WORKING_COUNT, false);
+        }
+        MPIHelper::getInstance().unlock();
+        if (id == -1) continue;
         Alignment* aln = new Alignment;
-        int id = MPIHelper::getInstance().increment(FRONT);
         
         vector<string> files;
         getFilesInDir(queuePath.c_str(), files);
@@ -1319,9 +1325,11 @@ void SuperAlignment::splitPartitions(Params &params) {
                 // cout << "Old BIC: " << oldBic << " New BIC: " << newBic << endl;
                 if (oldBic >= newBic) {
                     for (auto subAln : subAlns) {
-                        int id = MPIHelper::getInstance().increment(BACK);
+                        MPIHelper::getInstance().lock();
+                        int id = MPIHelper::getInstance().increment(BACK, false);
                         std::string filename = queuePath + subAln->name + "_" + std::to_string(id);
                         subAln->printAlignment(IN_PHYLIP, filename.c_str());
+                        MPIHelper::getInstance().unlock();
                     }
                 } else aln->printAlignment(IN_PHYLIP, (splitDir + aln->name).c_str());  
             }

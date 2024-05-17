@@ -54,28 +54,40 @@ void MPIHelper::initSharedMemory() {
 #endif
 }
 
-int MPIHelper::increment(int id) {
+int MPIHelper::increment(int id, bool enableLock) {
 #ifdef _IQTREE_MPI
     int one = 1, ret;
-    MPI_Win_lock(MPI_LOCK_EXCLUSIVE, 0, 0, shmwin);
+    if (enableLock) MPI_Win_lock(MPI_LOCK_EXCLUSIVE, 0, 0, shmwin);
     MPI_Fetch_and_op(&one, &ret, MPI_INT, 0, id, MPI_SUM, shmwin);
-    MPI_Win_unlock(0, shmwin);
+    if (enableLock) MPI_Win_unlock(0, shmwin);
     return ret;
 #endif
 }
 
-int MPIHelper::decrement(int id) {
+int MPIHelper::decrement(int id, bool enableLock) {
 #ifdef _IQTREE_MPI
     int minus_one = -1, ret;
-    MPI_Win_lock(MPI_LOCK_EXCLUSIVE, 0, 0, shmwin);
+    if (enableLock) MPI_Win_lock(MPI_LOCK_EXCLUSIVE, 0, 0, shmwin);
     MPI_Fetch_and_op(&minus_one, &ret, MPI_INT, 0, id, MPI_SUM, shmwin);
-    MPI_Win_unlock(0, shmwin);
+    if (enableLock) MPI_Win_unlock(0, shmwin);
     return ret;
 #else
     assert(0);
 #endif
 }
 
+void MPIHelper::lock() {
+#ifdef _IQTREE_MPI
+    MPI_Win_lock(MPI_LOCK_EXCLUSIVE, 0, 0, shmwin);
+#endif
+}
+
+
+void MPIHelper::unlock() {
+#ifdef _IQTREE_MPI
+    MPI_Win_unlock(0, shmwin);
+#endif
+}
 
 void MPIHelper::setTask(int delta) {
 #ifdef _IQTREE_MPI
@@ -87,12 +99,12 @@ void MPIHelper::setTask(int delta) {
 #endif
 }
 
-int MPIHelper::getSharedCounter(int id) {
+int MPIHelper::getSharedCounter(int id, bool enableLock) {
 #ifdef _IQTREE_MPI
     int ret;
-    MPI_Win_lock(MPI_LOCK_EXCLUSIVE, 0, 0, shmwin);
+    if (enableLock) MPI_Win_lock(MPI_LOCK_EXCLUSIVE, 0, 0, shmwin);
     MPI_Get(&ret, 1, MPI_INT, 0, id, 1, MPI_INT, shmwin);
-    MPI_Win_unlock(0, shmwin);
+    if (enableLock) MPI_Win_unlock(0, shmwin);
     return ret;
 #endif
 }

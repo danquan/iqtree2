@@ -248,10 +248,12 @@ private:
     int *shared_counter;
 
 public:
-    int increment(int id = 0);
-    int decrement(int id = 0);
-    int getSharedCounter(int id = 0);
+    int increment(int id = 0, bool enableLock = true);
+    int decrement(int id = 0, bool enableLock = true);
+    int getSharedCounter(int id = 0, bool enableLock = true);
     void setTask(int delta);
+    void lock();
+    void unlock();
 
 private:
     int numTreeSent;
