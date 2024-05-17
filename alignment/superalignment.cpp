@@ -24,6 +24,9 @@
 #include "nclextra/myreader.h"
 #include "main/phylotesting.h"
 #include "utils/timeutil.h" //for getRealTime()
+#include <queue>
+#include "main/phyloanalysis.h"
+#include "utils/MPIHelper.h"
 
 Alignment *createAlignment(string aln_file, const char *sequence_type, InputType intype, string model_name) {
     bool is_dir = isDirectory(aln_file.c_str());
@@ -880,6 +883,465 @@ void SuperAlignment::printBestPartitionRaxml(const char *filename) {
     
 }
 
+void SuperAlignment::splitPartitions(Params &params) {
+    std::cout << "Splitting partitions..." << std::endl;
+    double begin_wallclock_time = getRealTime();
+    double begin_cpu_time = getCPUTime();
+
+    enum MemoryType {
+        FRONT = 0,
+        BACK,
+        WORKING_COUNT
+    };
+
+    std::iostream null_stream(nullptr);
+    std::streambuf* cout_buffer = std::cout.rdbuf(null_stream.rdbuf());
+    const int BOUND_LEN = 50;
+
+    sort(partitions.begin(), partitions.end(), [](Alignment *a, Alignment *b) {
+        return a->getNPattern() * a->getNSeq() < b->getNPattern() * b->getNSeq();
+    });
+    auto computePartitionCost = [&]() {
+        vector<double> pref(partitions.size() + 1);
+        vector<double> suff(partitions.size() + 1);
+        pref[0] = 0;
+        suff[partitions.size()] = 0;
+        for (int i = 1; i <= partitions.size(); ++i) {
+            pref[i] = pref[i-1] + partitions[i-1]->getNPattern() * partitions[i-1]->getNSeq();
+        }
+        for (int i = partitions.size() - 1; i >= 0; --i) {
+            suff[i] = suff[i+1] + partitions[i]->getNPattern() * partitions[i]->getNSeq();
+        }
+        for (int i = partitions.size(); i >= 1; --i) {
+            if (suff[i] / (partitions.size() - i) <= 2 * pref[i] / i) {
+                return pref[i] / i * 2;
+            }
+        }
+        return pref[partitions.size()] / partitions.size() * 2;
+    };
+
+    double partitionCost = computePartitionCost();
+    
+    const std::string splitDir = string(params.out_prefix) + "/split/";
+    const std::string prefixPath = string(params.out_prefix) + "/tmp/";
+    const std::string queuePath = prefixPath + "queue/";
+
+    if (MPIHelper::getInstance().isMaster()) {
+        if (system(("test -d " + prefixPath).c_str()) == 0) {
+            system(("rm -rf " + prefixPath).c_str());
+        }
+        system(("mkdir " + prefixPath).c_str());
+        if (system(("test -d " + splitDir).c_str()) == 0) {
+            system(("rm -rf " + splitDir).c_str());
+        }
+        system(("mkdir " + splitDir).c_str());
+        system(("mkdir " + queuePath).c_str());
+    }
+     
+
+    auto calcRate = [&](Alignment* aln) {
+        vector<double> rates;
+        vector<vector<vector<int>>> sequences(aln->getNSite());
+        for (int i = 0; i < aln->size(); ++i) {
+            Pattern p = aln->at(i);
+            if (p.isConst()) continue;
+            unordered_map<StateType, vector<int>> states;
+            for (int j = 0; j < p.size(); ++j) {
+                states[p[j]].push_back(j);
+            }
+            
+            for (auto it = states.begin(); it != states.end(); ++it)
+                sequences[i].push_back(it->second);
+        }
+        vector<double> ratePatterns(aln->size());
+        
+        for (int i = 0; i < aln->size(); ++i) {
+            if (aln->at(i).isConst()) {
+                ratePatterns[i] = 1.0;
+                continue;
+            }
+            vector<int> inSeq(aln->getNSeq());
+            for (int j = 0; j < sequences[i].size(); ++j) {
+                for (auto x : sequences[i][j]) {
+                    inSeq[x] = j;
+                }
+            }
+
+            int totalCount = 0;
+            double score = 0;
+            for (int j = 0; j < aln->size(); ++j) {
+                if (aln->at(j).isConst()) continue;
+                int cnt = 0;
+                totalCount += aln->at(j).frequency;
+                for (auto seq2 : sequences[j]) {
+                    int idx = inSeq[seq2[0]];
+                    auto seq = sequences[i][idx];
+                    bool found = true;
+                    for (int x = 0, y = 0; x < seq2.size(); ++x) {
+                        while (y < seq.size() && seq[y] != seq2[x]) ++y;
+                        if (y == seq.size()) {
+                            found = false;
+                            break;
+                        }
+                        ++y;
+                    }
+                    if (found) ++cnt;
+                }
+                score += 1.0 * cnt / sequences[j].size() * aln->at(j).frequency;
+            }
+            ratePatterns[i] = score / totalCount;
+        }
+        for (int i = 0; i < aln->getNSite(); ++i)
+            rates.push_back(ratePatterns[aln->getPatternID(i)]);
+        return rates;
+    };
+
+    auto getPartitionIdx = [&](double lh0, double lh1, double lh2, int stg) {
+        if (stg == 0) { // assign to best likelihood subset
+            double maxLh = std::max({lh1, lh2, lh0});
+            if (maxLh == lh0) return 0;
+            if (maxLh == lh1) return 1;
+            return 2;
+        } else { // assign to subset based on probability distribution
+            double minLH = std::min({lh1, lh2, lh0});
+            double eps0 = lh0 - minLH;
+            double eps1 = lh1 - minLH;
+            double eps2 = lh2 - minLH;
+            double total = exp(eps0) + exp(eps1) + exp(eps2);
+
+            double r = (double) rand() / RAND_MAX;
+            if (r < exp(eps0) / total) return 0;
+            if (r < (exp(eps0) + exp(eps1)) / total) return 1;
+            return 2;
+        } 
+    };
+
+    #define INTEGRATED
+    auto calcLH = [&](Alignment* aln, std::string model, std::string treefile) {
+        std::string filename = prefixPath + aln->name;
+        aln->printAlignment(IN_PHYLIP, filename.c_str());
+
+        #ifdef INTEGRATED
+        std::iostream null_stream(nullptr);
+        std::streambuf* cout_buffer = std::cout.rdbuf(null_stream.rdbuf());
+        char* argv[] = {
+            "", 
+            "-s", &filename[0],
+            "-m", &model[0],
+            "-t", &treefile[0],
+            "--sitelh", 
+            "--safe", 
+            "--redo"
+        };
+        int argc = sizeof(argv) / sizeof(char*);
+        Params::addParams(argc, argv);
+        Params::getInstance().lockMPI = true;
+        Checkpoint *checkpoint = new Checkpoint;
+        runPhyloAnalysis(Params::getInstance(), checkpoint);
+        Params::removeParams();
+        std::cout.rdbuf(cout_buffer);
+        #else
+
+        std::string cmd = "./iqtree2-mpi -s " + filename + " -m " + model + " -t " + treefile + " --sitelh --safe --prefix " + prefixPath + aln->name + " --redo > /dev/null";
+        system(cmd.c_str());
+        #endif
+
+        std::vector<double> lh;
+        std::ifstream in(prefixPath + aln->name + ".sitelh");
+        
+        std::string line;
+        std::getline(in, line); // skip the first line
+        std::getline(in, line);
+        std::istringstream iss(line);
+        std::string tmp; iss >> tmp; // skip the first word
+        double l;
+        while (iss >> l) {
+            lh.push_back(l);
+        }
+        return lh;
+    };
+
+    auto findBestModel = [&](Alignment *aln, std::vector<std::vector<int>> sitesOfParts) {
+        ofstream out(prefixPath + aln->name + ".partitions");
+        out << "#nexus\nbegin sets;\n";
+        for (int i = 0; i < 3; ++i) {
+            out << "charset " << aln->name << "_" << i << " = ";
+            for (int j = 0; j < sitesOfParts[i].size(); ++j) {
+                out << sitesOfParts[i][j] + 1;
+                if (j < sitesOfParts[i].size() - 1) out << ",";
+            }
+            out << ";\n";
+        }
+        out << "end;\n";
+        out.close();
+        aln->printAlignment(IN_PHYLIP, (prefixPath + aln->name).c_str());
+        std::cout << "Finding the best model for " << aln->name << "..." << std::endl;
+        
+        #ifndef INTEGRATED
+        std::string cmd = "./iqtree2-mpi -s " + prefixPath + aln->name + " -m MF --fast --mset " + params.model_set + " -p " + prefixPath + aln->name + ".partitions --safe --prefix " + prefixPath + aln->name + " --seed 0 --redo > /dev/null";
+        // cout << cmd << '\n';
+        system(cmd.c_str());
+        #else
+        std::iostream null_stream(nullptr);
+        std::streambuf* cout_buffer = std::cout.rdbuf(null_stream.rdbuf());
+
+        std::string arg_s = prefixPath + aln->name;
+        std::string arg_prefix = prefixPath + aln->name;
+        std::string arg_p = prefixPath + aln->name + ".partitions";
+
+        char* argv[] = {
+            "", 
+            "-s", &arg_s[0],
+            "-p", &arg_p[0],
+            "-mset", &params.model_set[0],
+            "--prefix", &arg_prefix[0],
+            "-m", "MF",
+            "--fast",
+            "--redo",
+            "--seed", "0"
+        };
+        int argc = sizeof(argv) / sizeof(char*);
+        Params::addParams(argc, argv);
+        Params::getInstance().lockMPI = true;
+        Checkpoint *checkpoint = new Checkpoint;
+        runPhyloAnalysis(Params::getInstance(), checkpoint);
+        Params::removeParams();
+        std::cout.rdbuf(cout_buffer);
+        #endif
+
+        ifstream inp(prefixPath + aln->name + ".iqtree");
+        std::string line;
+        std::vector<std::string> models;
+        while (std::getline(inp, line)) {
+            if (line.find("Best-fit model") != std::string::npos) {
+                std::string str = line.substr(line.find(":") + 2);
+                bool isModel = 1;
+                std::string model;
+                for (int i = 0; i < str.size(); ++i) {
+                    if (str[i] == ':') {
+                        assert(isModel);
+                        models.push_back(model);
+                        isModel = false;
+                        model = "";
+                    } else if (str[i] == ',') {
+                        assert(!isModel);
+                        isModel = true;
+                    } else if (isModel) {
+                        model += str[i];
+                    }
+                }
+            }
+        }
+        for (auto &model: models) {
+            int pos = model.find("+ASC");
+            if (pos != std::string::npos) {
+                model = model.substr(0, pos) + model.substr(pos + 4);
+            }
+        }
+        return models;
+    };
+
+    auto getBIC = [&](Alignment* aln) {
+        std::ifstream inp(prefixPath + aln->name + "_BIC.iqtree");
+        if (!inp) {
+            aln->printAlignment(IN_PHYLIP, (prefixPath + aln->name).c_str());
+            #ifndef INTEGRATED
+            std::string cmd = "./iqtree2-mpi -s " + prefixPath + aln->name + " -m MF --fast --mset " + params.model_set + " --safe --prefix " + prefixPath + aln->name + "_BIC" + " --seed 0 --redo > /dev/null";
+            system(cmd.c_str());
+            #else
+            std::iostream null_stream(nullptr);
+            std::streambuf* cout_buffer = std::cout.rdbuf(null_stream.rdbuf());
+
+            std::string arg_s = prefixPath + aln->name;
+            std::string arg_prefix = prefixPath + aln->name + "_BIC";
+
+            char* argv[] = {
+                "", 
+                "-s", &arg_s[0],
+                "-mset", &params.model_set[0],
+                "--prefix", &arg_prefix[0],
+                "-m", "MF",
+                "--fast",
+                "--safe",
+                "--redo",
+                "--seed", "0"
+            };
+            int argc = sizeof(argv) / sizeof(char*);
+            Params::addParams(argc, argv);
+            Params::getInstance().lockMPI = true;
+            Checkpoint *checkpoint = new Checkpoint;
+            runPhyloAnalysis(Params::getInstance(), checkpoint);
+            Params::removeParams();
+            std::cout.rdbuf(cout_buffer);
+    
+            #endif
+            inp = std::ifstream(prefixPath + aln->name + "_BIC.iqtree");
+        }
+        std::string line;
+        while (std::getline(inp, line)) {
+            if (line.find("Bayesian information criterion (BIC) score:") != std::string::npos) {
+                std::string str = line.substr(line.find(":") + 2);
+                return std::stod(str);
+            }
+        }
+        assert(0);
+    };
+    if (MPIHelper::getInstance().isMaster()) {
+        for (auto aln : partitions) {
+            int id = MPIHelper::getInstance().increment(BACK);
+            std::string filename = queuePath + aln->name + "_" + std::to_string(id);
+            aln->printAlignment(IN_PHYLIP, filename.c_str());
+        }
+    }
+
+    MPIHelper::getInstance().barrier();
+    // printf("Process %d is ready %d %d\n", MPIHelper::getInstance().getProcessID(), MPIHelper::getInstance().getSharedCounter(0), MPIHelper::getInstance().getSharedCounter(1));
+    while (true) {
+        if (MPIHelper::getInstance().getSharedCounter(FRONT) == MPIHelper::getInstance().getSharedCounter(BACK)) {
+            if (MPIHelper::getInstance().getSharedCounter(WORKING_COUNT) == 0) {
+                break;
+            } else {
+                continue;
+            }
+        }
+        Alignment* aln = new Alignment;
+        int id = MPIHelper::getInstance().increment(FRONT);
+        printf("Process %d is working on %d\n", MPIHelper::getInstance().getProcessID(), id);
+        MPIHelper::getInstance().increment(WORKING_COUNT);
+        vector<string> files;
+        getFilesInDir(queuePath.c_str(), files);
+        for (auto &file : files) {
+            if (file.substr(file.size() - std::to_string(id).size() - 1) == "_" + std::to_string(id)) {
+                aln = createAlignment((queuePath + file).c_str(), params.sequence_type, IN_PHYLIP, params.model_name);
+                aln->name = file.substr(0, file.size() - std::to_string(id).size() - 1);
+                aln->model_name = params.model_name;
+                aln->aln_file = queuePath + file;
+                break;
+            }
+        }
+        
+        if (aln->getNPattern() * aln->getNSeq() < partitionCost) {
+            aln->printAlignment(IN_PHYLIP, (splitDir + aln->name).c_str());
+        } else {
+            // calculate rates by TIGER
+            std::vector<double> rates = calcRate(aln);
+            
+            double maxRate = - 1e18, minRate = 1e18;
+            for (int i = 0; i < rates.size(); ++i) {
+                if (maxRate < rates[i]) maxRate = rates[i];
+                if (minRate > rates[i]) minRate = rates[i];
+            }
+            double lowerPivot = minRate + (maxRate - minRate) / 3;
+            double upperPivot = maxRate - (maxRate - minRate) / 3;
+            std::vector<std::vector<int>> sitesOfParts(3);
+            for (int i = 0; i < rates.size(); ++i) {
+                if (rates[i] < lowerPivot) sitesOfParts[0].push_back(i);
+                else if (rates[i] < upperPivot) sitesOfParts[1].push_back(i);
+                else sitesOfParts[2].push_back(i);
+            }
+            if (sitesOfParts[0].empty() || sitesOfParts[1].empty() || sitesOfParts[2].empty()) {
+                for (int i = 0; i < 3; ++i) sitesOfParts[i].clear();
+                for (int i = 0; i < rates.size(); ++i) {
+                    if (rates[i] > upperPivot && sitesOfParts[2].size() <= rates.size() / 3) sitesOfParts[2].push_back(i);
+                    else if (rates[i] < lowerPivot && sitesOfParts[0].size() <= rates.size() / 3) sitesOfParts[0].push_back(i);
+                    else sitesOfParts[1].push_back(i);
+                }
+            }
+
+            // std::cout << "Split into " << sitesOfParts[0].size() << ", " << sitesOfParts[1].size() << ", " << sitesOfParts[2].size() << std::endl;
+
+            // find best model for each subset
+            std::vector<std::string> models = findBestModel(aln, sitesOfParts);
+            /*
+            for (auto &model : models) {
+                std::cout << model << std::endl;
+            }
+            */
+            const std::string treefile = prefixPath + aln->name + ".treefile";
+            // calculate likelihood for each subset based on the best model
+            std::vector<double> lh[3];
+            for (int i = 0; i < 3; ++i) 
+                lh[i] = calcLH(aln, models[i], treefile);
+            // reassign sites to subsets
+            for (int i = 0; i < 3; ++i) sitesOfParts[i].clear();
+            for (int i = 0; i < aln->getNSite(); ++i) {
+                Pattern p = aln->getPattern(i);
+                int idx = (p.isConst() ? getPartitionIdx(lh[0][i], lh[1][i], lh[2][i], 1) : getPartitionIdx(lh[0][i], lh[1][i], lh[2][i], 0));
+                sitesOfParts[idx].push_back(i);
+            }
+            // if a subset is too small, assign its sites to the other subsets
+            int smallCount = 0;
+            for (int i = 0; i < 3; ++i) {
+                if (sitesOfParts[i].size() < BOUND_LEN) {
+                    smallCount++;
+                }
+            }
+            if (smallCount > 1) {
+                aln->printAlignment(IN_PHYLIP, (splitDir + aln->name).c_str());
+            } else {
+                for (int i = 0; i < 3; ++i) {
+                    if (sitesOfParts[i].size() < BOUND_LEN) {
+                        std::vector<int> others;
+                        for (int j = 0; j < 3; ++j) {
+                            if (j != i) {
+                                others.push_back(j);
+                            }
+                        }
+                        for (auto j: sitesOfParts[i]) {
+                            if (lh[others[0]][j] > lh[others[1]][j]) {
+                                sitesOfParts[others[0]].push_back(j);
+                            } else {
+                                sitesOfParts[others[1]].push_back(j);
+                            }
+                        }
+                        sitesOfParts[i].clear();
+                    }
+                }
+
+                // std::cout << "Split into " << sitesOfParts[0].size() << ", " << sitesOfParts[1].size() << ", " << sitesOfParts[2].size() << std::endl;
+                vector<Alignment*> subAlns;
+                for (int i = 0; i < 3; ++i) {
+                    if (sitesOfParts[i].empty()) continue;
+                    Alignment* subAln = new Alignment;
+                    subAln->extractSites(aln, sitesOfParts[i]);
+                    subAln->name = aln->name + "_" + std::to_string(i);
+                    subAlns.push_back(subAln);
+                }
+
+                // check if the partition is good
+
+                double oldBic = getBIC(aln);
+                double newBic = 0;
+                for (auto subAln : subAlns)
+                    newBic += getBIC(subAln);
+                // cout << "Old BIC: " << oldBic << " New BIC: " << newBic << endl;
+                if (oldBic >= newBic) {
+                    for (auto subAln : subAlns) {
+                        int id = MPIHelper::getInstance().increment(BACK);
+                        std::string filename = queuePath + aln->name + "_" + std::to_string(id);
+                        aln->printAlignment(IN_PHYLIP, filename.c_str());
+                    }
+                } else aln->printAlignment(IN_PHYLIP, (splitDir + aln->name).c_str());  
+            }
+        }
+        
+        MPIHelper::getInstance().decrement(WORKING_COUNT);
+    }
+    for (int i = 0; i < partitions.size(); ++i) {
+        delete partitions[i];
+    }
+    partitions.clear();
+    
+    MPIHelper::getInstance().barrier();
+    if (MPIHelper::getInstance().isMaster()) {
+        system(("rm -rf " + prefixPath).c_str());
+    }
+    
+    std::cout.rdbuf(cout_buffer);
+    cout << "Split partitions took "
+        << convert_time(getRealTime() - begin_wallclock_time) << " (of wall-clock time) "
+        << convert_time(getCPUTime() - begin_cpu_time) << " (of CPU time)" << endl;
+}
 
 void SuperAlignment::linkSubAlignment(int part) {
 	ASSERT(taxa_index.size() == getNSeq());

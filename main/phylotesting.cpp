@@ -805,6 +805,7 @@ void runModelFinder(Params &params, IQTree &iqtree, ModelCheckpoint &model_info)
         return;
     // if (MPIHelper::getInstance().getNumProcesses() > 1)
     //     outError("Please use only 1 MPI process! We are currently working on the MPI parallelization of model selection.");
+
     // TODO: check if necessary
     //        if (iqtree.isSuperTree())
     //            ((PhyloSuperTree*) &iqtree)->mapTrees();

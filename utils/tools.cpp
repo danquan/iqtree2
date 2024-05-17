@@ -1016,6 +1016,9 @@ void parseArg(int argc, char *argv[], Params &params) {
     int cnt;
     progress_display::setProgressDisplay(false);
     verbose_mode = VB_MIN;
+    params.pqmaker = false;
+    params.fpqmaker = false;
+    params.split = false;
     params.tree_gen = NONE;
     params.user_file = NULL;
     params.constraint_tree_file = NULL;
@@ -1516,9 +1519,22 @@ void parseArg(int argc, char *argv[], Params &params) {
 #endif
                 continue;
             }
+
             if (strcmp(argv[cnt], "-V") == 0 || strcmp(argv[cnt], "-version") == 0 || strcmp(argv[cnt], "--version") == 0) {
                 printCopyright(cout);
                 exit(EXIT_SUCCESS);
+            }
+            if (strcmp(argv[cnt], "-pqmaker") == 0 || strcmp(argv[cnt],"--pqmaker") == 0) {
+                params.pqmaker = true;
+                continue;
+            }
+            if (strcmp(argv[cnt], "-fpqmaker") == 0 || strcmp(argv[cnt],"--fpqmaker") == 0) {
+                params.fpqmaker = true;
+                continue;
+            }
+            if (strcmp(argv[cnt], "-split") == 0 || strcmp(argv[cnt],"--split") == 0) {
+                params.split = true;
+                continue;
             }
 			if (strcmp(argv[cnt], "-ho") == 0 || strcmp(argv[cnt], "-?") == 0) {
 				usage_iqtree(argv, false);
@@ -6923,11 +6939,13 @@ void trimString(string &str) {
     str.erase(str.find_last_not_of(" \n\r\t")+1);
 }
 
-
+std::vector<Params*> Params::instances = {};
 
 Params& Params::getInstance() {
-    static Params instance;
-    return instance;
+    if (instances.empty()) {
+        instances.push_back(new Params());
+    }
+    return *instances.back();
 }
 
 
@@ -7703,4 +7721,17 @@ string getOutputNameWithExt(const InputType& format, const string& output_filepa
         default:
             return output_filepath + ".phy";
     }
+}
+
+void Params::addParams(int argc, char *argv[]) {
+    for (int i = 1; i < argc; ++i) {
+        std::cout << argv[i] << ' ';
+    }
+    std::cout << '\n';
+    instances.push_back(new Params());
+    parseArg(argc, argv, *instances.back());
+}
+
+void Params::removeParams() {
+    instances.pop_back();
 }

@@ -87,6 +87,8 @@ public:
     void printBestPartition(const char *filename);
     void printBestPartitionRaxml(const char *filename);
 
+    void splitPartitions(Params &params);
+
 	/**
 	 * create taxa_index from super-alignment to sub-alignment
 	 * @param part index of sub-alignment
