@@ -943,8 +943,8 @@ void runModelFinder(Params &params, IQTree &iqtree, ModelCheckpoint &model_info)
     
     // force to dump all checkpointing information
     if (MPIHelper::getInstance().getProcessID() == 0) {
-        summary_model.dump(true);
-        model_info = summary_model;
+        // summary_model.dump(true);
+        // model_info = summary_model;
     }
     
     // transfer models parameters

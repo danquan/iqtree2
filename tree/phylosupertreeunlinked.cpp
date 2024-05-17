@@ -182,6 +182,66 @@ void PhyloSuperTreeUnlinked::printResultTree(string suffix) {
         cout << "Best tree printed to " << tree_file_name << endl;
 }
 
+void PhyloSuperTreeUnlinked::printResultTreeMPI(string suffix) {
+    // if (MPIHelper::getInstance().isWorker()) {
+    //     return;
+    // }
+    if (params->suppress_output_flags & OUT_TREEFILE)
+        return;
+    string tree_file_name = params->out_prefix;
+    tree_file_name += ".treefile";
+    if (suffix.compare("") != 0) {
+        tree_file_name += "." + suffix;
+    }
+    ofstream out;
+    out.open(tree_file_name.c_str());
+
+    stringstream ss;
+    for (iterator tree = begin(); tree != end(); tree++) {
+        ss << "Partition " << (*tree)->aln->name << endl;
+        (*tree)->printTree(ss, WT_BR_LEN | WT_BR_LEN_FIXED_WIDTH | WT_SORT_TAXA | WT_NEWLINE);
+    }
+
+    string tree_string = ss.str();
+
+    if (MPIHelper::getInstance().isWorker()) {
+        MPIHelper::getInstance().sendString(tree_string, 0, TREE_TAG);
+    } else {
+        vector<pair<string, string> > tree_strings;
+        for (int worker = 1; worker < MPIHelper::getInstance().getNumProcesses(); worker++) {
+            // stringstream ss_tmp;
+            
+            string worker_tree_string;
+            MPIHelper::getInstance().recvString(worker_tree_string, worker, TREE_TAG);
+            ss << worker_tree_string;
+        }
+
+        while (ss.eof() == false) {
+            string partition_name;
+            getline(ss, partition_name);
+
+            if (partition_name.empty()) break;
+
+            string tree_string;
+            getline(ss, tree_string);
+
+            tree_strings.push_back(make_pair(partition_name, tree_string));
+        }
+
+        sort(tree_strings.begin(), tree_strings.end(), [](const pair<string, string> &a, const pair<string, string> &b) {
+            return a.first < b.first;
+        });
+
+        for (auto &tree_string : tree_strings) {
+            out << tree_string.second << endl;
+        }
+    }
+
+    out.close();
+    if (verbose_mode >= VB_MED)
+        cout << "Best tree printed to " << tree_file_name << endl;
+}
+
 double PhyloSuperTreeUnlinked::treeLength(Node *node, Node *dad) {
     double len = 0.0;
     for (iterator tree = begin(); tree != end(); tree++)

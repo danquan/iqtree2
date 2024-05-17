@@ -3072,7 +3072,8 @@ void runTreeReconstruction(Params &params, IQTree* &iqtree) {
     }
     
     // BUG FIX: readTreeString(bestTreeString) not needed before this line
-    iqtree->printResultTree();
+    if (!params.non_mpi_treesearch) iqtree->printResultTree();
+    else ((PhyloSuperTreeUnlinked*) iqtree)->printResultTreeMPI();
     iqtree->saveCheckpoint();
 
     if (params.upper_bound_NNI) {

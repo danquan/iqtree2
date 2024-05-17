@@ -1558,35 +1558,81 @@ void PhyloSuperTree::printBestPartitionParams(const char *filename) {
 }
 
 void PhyloSuperTree::printBestPartitionParamsMPI(const char *filename) {
+	SuperAlignment *saln = (SuperAlignment*)aln;
+	Checkpoint* myCheckpoint = new Checkpoint;
+
+	for (int part = 0; part < size(); ++part) {
+		string name = "Charset" + saln->partitions[part]->name;
+		string aln_file = saln->partitions[part]->aln_file;
+
+		myCheckpoint->put(name, aln_file);
+	}
+
+	for (int part = 0; part < size(); ++part) {
+		string name = "Model" + saln->partitions[part]->name + "{" + to_string(at(part)->treeLength()) + "}";
+		string model = at(part)->getModelNameParams(true);
+		
+		myCheckpoint->put(name, model);
+	}
+
 	if (MPIHelper::getInstance().isWorker()) {
-		ModelCheckpoint *checkpoint = new ModelCheckpoint();
-		SuperAlignment *saln = (SuperAlignment*)aln;
-
-		// checkpoint->startStruct("partition" + to_string(MPIHelper::getInstance().getProcessID()));
-
-		for (int part = 0; part < size(); ++part) {
-			string name = saln->partitions[part]->name;
-            string aln_file = saln->partitions[part]->aln_file;
-			checkpoint->put(name, aln_file);
-		}
-
-		// for (int part = 0; part < size(); ++part) {
-		// 	string model = at(part)->getModelNameParams(true);
-		// 	string name = saln->partitions[part]->name; // + "{" + (string)at(part)->treeLength() + "}";
-		// 	checkpoint->put(model, name);
-		// }
-
-		// checkpoint->endStruct();
-
-		ofstream myout("../output/NSP6/train-result-mpi/1.thanh");
-		checkpoint->dump(myout);
-		MPIHelper::getInstance().sendCheckpoint(checkpoint, 0);
+		MPIHelper::getInstance().sendCheckpoint(myCheckpoint, 0);
 	} else {
+		Checkpoint* summaryCheckpoint = myCheckpoint;
+
 		for (int worker = 1; worker < MPIHelper::getInstance().getNumProcesses(); ++worker) {
-			ModelCheckpoint *checkpoint;
-			int wk = MPIHelper::getInstance().recvCheckpoint(checkpoint);
-			checkpoint->dump();
+			Checkpoint* myCheckpoint = new Checkpoint;
+			int wk = MPIHelper::getInstance().recvCheckpoint(myCheckpoint);
+
+			for (auto it = myCheckpoint->begin(); it != myCheckpoint->end(); ++it) {
+				string name = it->first;
+				string aln_file = it->second;
+				
+				summaryCheckpoint->put(name, aln_file);
+			}
 		}
+
+		stringstream ss;
+		summaryCheckpoint->dump(ss);
+
+		ofstream out;
+		out.exceptions(ios::failbit | ios::badbit);
+		out.open(filename);
+
+		out << "#nexus" << endl;
+		out << "begin sets;" << endl;
+		
+		string line;
+		int numCharsetLines = 0;
+		int numModelLines = 0;
+
+		while (getline(ss, line)) {
+			if (line.find("Charset") != string::npos) {
+				line = line.substr(7);
+				++numCharsetLines;
+
+				string key = line.substr(0, line.find(":"));
+				string value = line.substr(line.find(":") + 2);
+				out << "  charset " << key << " = " << value << ": ;" << endl;
+			} else if (line.find("Model") != string::npos) {
+				line = line.substr(5);
+				++numModelLines;
+				if (numModelLines == 1) {
+					out << "  charpartition mymodels =" << endl;
+				}
+
+				string key = line.substr(0, line.find(":"));
+				string value = line.substr(line.find(":") + 2);
+				out << "    " << value << ": " << key;
+				if (numModelLines == numCharsetLines) {
+					out << ";" << endl;
+				} else {
+					out << "," << endl;
+				}
+			}
+		}
+
+		out << "end;" << endl;
 	}
 
     // try {
