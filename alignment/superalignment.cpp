@@ -1003,7 +1003,7 @@ void SuperAlignment::splitPartitions(Params &params) {
             double minLH = *std::min_element(lh.begin(), lh.end());
             vector<double> eps;
             for (int i = 0; i < lh.size(); ++i) {
-                eps.push_back(lh[i] - minLH);
+                eps.push_back(exp(lh[i] - minLH));
             }
             double total = std::accumulate(eps.begin(), eps.end(), 0.0);
             double r = (double) rand() / RAND_MAX;
@@ -1227,13 +1227,14 @@ void SuperAlignment::splitPartitions(Params &params) {
                 break;
             }
         }
-        
+
         if (aln->getNPattern() * aln->getNSeq() < partitionCost) {
             aln->printAlignment(IN_PHYLIP, (splitDir + aln->name).c_str());
             printf("Process %d: Done %s\n", MPIHelper::getInstance().getProcessID(), aln->name.c_str());
             MPIHelper::getInstance().decrement(WORKING_COUNT);
             continue;
         }
+    
         // calculate rates by TIGER
         std::vector<double> rates = calcRate(aln);
         
