@@ -996,23 +996,23 @@ void SuperAlignment::splitPartitions(Params &params) {
         return rates;
     };
 
-    auto getPartitionIdx = [&](double lh0, double lh1, double lh2, int stg) {
+    auto getPartitionIdx = [&](vector<double> lh, int stg) {
         if (stg == 0) { // assign to best likelihood subset
-            double maxLh = std::max({lh1, lh2, lh0});
-            if (maxLh == lh0) return 0;
-            if (maxLh == lh1) return 1;
-            return 2;
+            return (int)(std::max_element(lh.begin(), lh.end()) - lh.begin());
         } else { // assign to subset based on probability distribution
-            double minLH = std::min({lh1, lh2, lh0});
-            double eps0 = lh0 - minLH;
-            double eps1 = lh1 - minLH;
-            double eps2 = lh2 - minLH;
-            double total = exp(eps0) + exp(eps1) + exp(eps2);
-
+            double minLH = *std::min_element(lh.begin(), lh.end());
+            vector<double> eps;
+            for (int i = 0; i < lh.size(); ++i) {
+                eps.push_back(lh[i] - minLH);
+            }
+            double total = std::accumulate(eps.begin(), eps.end(), 0.0);
             double r = (double) rand() / RAND_MAX;
-            if (r < exp(eps0) / total) return 0;
-            if (r < (exp(eps0) + exp(eps1)) / total) return 1;
-            return 2;
+
+            for (int i = 0; i < eps.size(); ++i) {
+                if (r < eps[i] / total) return i;
+                r -= eps[i] / total;
+            }
+            assert(0);
         } 
     };
 
@@ -1062,9 +1062,10 @@ void SuperAlignment::splitPartitions(Params &params) {
     };
 
     auto findBestModel = [&](Alignment *aln, std::vector<std::vector<int>> sitesOfParts) {
+        int n = sitesOfParts.size();
         ofstream out(prefixPath + aln->name + ".partitions");
         out << "#nexus\nbegin sets;\n";
-        for (int i = 0; i < 3; ++i) {
+        for (int i = 0; i < n; ++i) {
             out << "charset " << aln->name << "_" << i << " = ";
             for (int j = 0; j < sitesOfParts[i].size(); ++j) {
                 out << sitesOfParts[i][j] + 1;
@@ -1229,111 +1230,137 @@ void SuperAlignment::splitPartitions(Params &params) {
         
         if (aln->getNPattern() * aln->getNSeq() < partitionCost) {
             aln->printAlignment(IN_PHYLIP, (splitDir + aln->name).c_str());
-        } else {
-            // calculate rates by TIGER
-            std::vector<double> rates = calcRate(aln);
-            
-            double maxRate = - 1e18, minRate = 1e18;
+            printf("Process %d: Done %s\n", MPIHelper::getInstance().getProcessID(), aln->name.c_str());
+            MPIHelper::getInstance().decrement(WORKING_COUNT);
+            continue;
+        }
+        // calculate rates by TIGER
+        std::vector<double> rates = calcRate(aln);
+        
+        double maxRate = - 1e18, minRate = 1e18;
+        for (int i = 0; i < rates.size(); ++i) {
+            if (maxRate < rates[i]) maxRate = rates[i];
+            if (minRate > rates[i]) minRate = rates[i];
+        }
+        double lowerPivot = minRate + (maxRate - minRate) / 3;
+        double upperPivot = maxRate - (maxRate - minRate) / 3;
+        
+        std::vector<std::vector<int>> sitesOfParts(3);
+        for (int i = 0; i < rates.size(); ++i) {
+            if (rates[i] < lowerPivot) sitesOfParts[0].push_back(i);
+            else if (rates[i] < upperPivot) sitesOfParts[1].push_back(i);
+            else sitesOfParts[2].push_back(i);
+        }
+        auto getSmallParts = [&]() {
+            std::vector<int> small;
+            for (int i = 0; i < sitesOfParts.size(); ++i) {
+                if (sitesOfParts[i].size() < BOUND_LEN) small.push_back(i);
+            }
+            return small;
+        };
+        vector<int> small = getSmallParts();
+        if (small.size() >= 2) {
+            aln->printAlignment(IN_PHYLIP, (splitDir + aln->name).c_str());
+            printf("Process %d: Done %s\n", MPIHelper::getInstance().getProcessID(), aln->name.c_str());
+            MPIHelper::getInstance().decrement(WORKING_COUNT);
+            continue;
+        } 
+        if (small.size() == 1) {
+            int pivot = (maxRate + minRate) / 2;
+            sitesOfParts.assign(2, vector<int>());
             for (int i = 0; i < rates.size(); ++i) {
-                if (maxRate < rates[i]) maxRate = rates[i];
-                if (minRate > rates[i]) minRate = rates[i];
+                if (rates[i] < pivot) sitesOfParts[0].push_back(i);
+                else sitesOfParts[1].push_back(i);
             }
-            double lowerPivot = minRate + (maxRate - minRate) / 3;
-            double upperPivot = maxRate - (maxRate - minRate) / 3;
-            std::vector<std::vector<int>> sitesOfParts(3);
-            for (int i = 0; i < rates.size(); ++i) {
-                if (rates[i] < lowerPivot) sitesOfParts[0].push_back(i);
-                else if (rates[i] < upperPivot) sitesOfParts[1].push_back(i);
-                else sitesOfParts[2].push_back(i);
-            }
-            if (sitesOfParts[0].empty() || sitesOfParts[1].empty() || sitesOfParts[2].empty()) {
-                for (int i = 0; i < 3; ++i) sitesOfParts[i].clear();
-                for (int i = 0; i < rates.size(); ++i) {
-                    if (rates[i] > upperPivot && sitesOfParts[2].size() <= rates.size() / 3) sitesOfParts[2].push_back(i);
-                    else if (rates[i] < lowerPivot && sitesOfParts[0].size() <= rates.size() / 3) sitesOfParts[0].push_back(i);
-                    else sitesOfParts[1].push_back(i);
-                }
-            }
-            printf("Process %d: %d %d %d\n", MPIHelper::getInstance().getProcessID(), sitesOfParts[0].size(), sitesOfParts[1].size(), sitesOfParts[2].size());
-            // std::cout << "Split into " << sitesOfParts[0].size() << ", " << sitesOfParts[1].size() << ", " << sitesOfParts[2].size() << std::endl;
-
-            // find best model for each subset
-            std::vector<std::string> models = findBestModel(aln, sitesOfParts);
-            printf("Process %d: %s %s %s\n", MPIHelper::getInstance().getProcessID(), models[0].c_str(), models[1].c_str(), models[2].c_str());
-            /*
-            for (auto &model : models) {
-                std::cout << model << std::endl;
-            }
-            */
-            const std::string treefile = prefixPath + aln->name + ".treefile";
-            // calculate likelihood for each subset based on the best model
-            std::vector<double> lh[3];
-            for (int i = 0; i < 3; ++i) 
-                lh[i] = calcLH(aln, models[i], treefile);
-            // reassign sites to subsets
-            for (int i = 0; i < 3; ++i) sitesOfParts[i].clear();
-            for (int i = 0; i < aln->getNSite(); ++i) {
-                Pattern p = aln->getPattern(i);
-                int idx = (p.isConst() ? getPartitionIdx(lh[0][i], lh[1][i], lh[2][i], 1) : getPartitionIdx(lh[0][i], lh[1][i], lh[2][i], 0));
-                sitesOfParts[idx].push_back(i);
-            }
-            // if a subset is too small, assign its sites to the other subsets
-            int smallCount = 0;
-            for (int i = 0; i < 3; ++i) {
-                if (sitesOfParts[i].size() < BOUND_LEN) {
-                    smallCount++;
-                }
-            }
-            if (smallCount > 1) {
+            if (getSmallParts().size()) {
                 aln->printAlignment(IN_PHYLIP, (splitDir + aln->name).c_str());
-            } else {
-                for (int i = 0; i < 3; ++i) {
-                    if (sitesOfParts[i].size() < BOUND_LEN) {
-                        std::vector<int> others;
-                        for (int j = 0; j < 3; ++j) {
-                            if (j != i) {
-                                others.push_back(j);
-                            }
-                        }
-                        for (auto j: sitesOfParts[i]) {
-                            if (lh[others[0]][j] > lh[others[1]][j]) {
-                                sitesOfParts[others[0]].push_back(j);
-                            } else {
-                                sitesOfParts[others[1]].push_back(j);
-                            }
-                        }
-                        sitesOfParts[i].clear();
-                    }
-                }
-
-                // std::cout << "Split into " << sitesOfParts[0].size() << ", " << sitesOfParts[1].size() << ", " << sitesOfParts[2].size() << std::endl;
-                vector<Alignment*> subAlns;
-                for (int i = 0; i < 3; ++i) {
-                    if (sitesOfParts[i].empty()) continue;
-                    Alignment* subAln = new Alignment;
-                    subAln->extractSites(aln, sitesOfParts[i]);
-                    subAln->name = aln->name + "_" + std::to_string(i);
-                    subAlns.push_back(subAln);
-                }
-
-                // check if the partition is good
-
-                double oldBic = getBIC(aln);
-                double newBic = 0;
-                for (auto subAln : subAlns)
-                    newBic += getBIC(subAln);
-                // cout << "Old BIC: " << oldBic << " New BIC: " << newBic << endl;
-                if (oldBic >= newBic) {
-                    for (auto subAln : subAlns) {
-                        MPIHelper::getInstance().lock();
-                        int id = MPIHelper::getInstance().increment(BACK, false);
-                        std::string filename = queuePath + subAln->name + "_" + std::to_string(id);
-                        subAln->printAlignment(IN_PHYLIP, filename.c_str());
-                        MPIHelper::getInstance().unlock();
-                    }
-                } else aln->printAlignment(IN_PHYLIP, (splitDir + aln->name).c_str());  
+                printf("Process %d: Done %s\n", MPIHelper::getInstance().getProcessID(), aln->name.c_str());
+                MPIHelper::getInstance().decrement(WORKING_COUNT);
+                continue;
             }
         }
+        printf("Process %d: ", MPIHelper::getInstance().getProcessID());
+        for (int i = 0; i < sitesOfParts.size(); ++i) {
+            printf("%d ", sitesOfParts[i].size());
+        }
+        printf("\n");
+        // std::cout << "Split into " << sitesOfParts[0].size() << ", " << sitesOfParts[1].size() << ", " << sitesOfParts[2].size() << std::endl;
+
+        // find best model for each subset
+        std::vector<std::string> models = findBestModel(aln, sitesOfParts);
+        /*
+        for (auto &model : models) {
+            std::cout << model << std::endl;
+        }
+        */
+        const std::string treefile = prefixPath + aln->name + ".treefile";
+        // calculate likelihood for each subset based on the best model
+        std::vector<double> lh[(int)sitesOfParts.size()];
+        for (int i = 0; i < sitesOfParts.size(); ++i) 
+            lh[i] = calcLH(aln, models[i], treefile);
+        // reassign sites to subsets
+        for (int i = 0; i < sitesOfParts.size(); ++i) sitesOfParts[i].clear();
+        for (int i = 0; i < aln->getNSite(); ++i) {
+            Pattern p = aln->getPattern(i);
+            vector<double> lhs;
+            for (int j = 0; j < sitesOfParts.size(); ++j) {
+                lhs.push_back(lh[j][i]);
+            }
+
+            int idx = (p.isConst() ? getPartitionIdx(lhs, 1) : getPartitionIdx(lhs, 0));
+            sitesOfParts[idx].push_back(i);
+        }
+        small = getSmallParts();
+
+        if (sitesOfParts.size() - small.size() < 2) {
+            aln->printAlignment(IN_PHYLIP, (splitDir + aln->name).c_str());
+            printf("Process %d: Done %s\n", MPIHelper::getInstance().getProcessID(), aln->name.c_str());
+            MPIHelper::getInstance().decrement(WORKING_COUNT);
+            continue;
+        }
+        for (auto i: small) {
+            vector<int> others;
+            for (int j = 0; j < sitesOfParts.size(); ++j) {
+                if (j != i) {
+                    others.push_back(j);
+                }
+            }
+            for (auto j: sitesOfParts[i]) {
+                if (lh[others[0]][j] > lh[others[1]][j]) {
+                    sitesOfParts[others[0]].push_back(j);
+                } else {
+                    sitesOfParts[others[1]].push_back(j);
+                }
+            }
+            sitesOfParts[i].clear();
+        }
+
+        // std::cout << "Split into " << sitesOfParts[0].size() << ", " << sitesOfParts[1].size() << ", " << sitesOfParts[2].size() << std::endl;
+        vector<Alignment*> subAlns;
+        for (int i = 0; i < sitesOfParts.size(); ++i) {
+            if (sitesOfParts[i].empty()) continue;
+            Alignment* subAln = new Alignment;
+            subAln->extractSites(aln, sitesOfParts[i]);
+            subAln->name = aln->name + "_" + std::to_string(i);
+            subAlns.push_back(subAln);
+        }
+
+        // check if the partition is good
+
+        double oldBic = getBIC(aln);
+        double newBic = 0;
+        for (auto subAln : subAlns)
+            newBic += getBIC(subAln);
+        // cout << "Old BIC: " << oldBic << " New BIC: " << newBic << endl;
+        if (oldBic >= newBic) {
+            for (auto subAln : subAlns) {
+                MPIHelper::getInstance().lock();
+                int id = MPIHelper::getInstance().increment(BACK, false);
+                std::string filename = queuePath + subAln->name + "_" + std::to_string(id);
+                subAln->printAlignment(IN_PHYLIP, filename.c_str());
+                MPIHelper::getInstance().unlock();
+            }
+        } else aln->printAlignment(IN_PHYLIP, (splitDir + aln->name).c_str());  
         printf("Process %d: Done %s\n", MPIHelper::getInstance().getProcessID(), aln->name.c_str());
         MPIHelper::getInstance().decrement(WORKING_COUNT);
     }
