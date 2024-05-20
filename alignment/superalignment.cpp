@@ -919,9 +919,10 @@ void SuperAlignment::splitPartitions(Params &params) {
         }
         return pref[partitions.size()] / partitions.size() * 2;
     };
-
-    double partitionCost = computePartitionCost();
     
+    double partitionCost = computePartitionCost();
+    reverse(partitions.begin(), partitions.end());
+
     const std::string splitDir = string(params.out_prefix) + "/split/";
     const std::string prefixPath = string(params.out_prefix) + "/tmp/";
     const std::string queuePath = prefixPath + "queue/";
@@ -1139,6 +1140,7 @@ void SuperAlignment::splitPartitions(Params &params) {
                 model = model.substr(0, pos) + model.substr(pos + 4);
             }
         }
+        models.erase(std::unique(models.begin(), models.end()), models.end());
         return models;
     };
 
@@ -1227,10 +1229,12 @@ void SuperAlignment::splitPartitions(Params &params) {
                 break;
             }
         }
+        double begin_wallclock_time = getRealTime();
+        double begin_cpu_time = getCPUTime();
 
         if (aln->getNPattern() * aln->getNSeq() < partitionCost) {
             aln->printAlignment(IN_PHYLIP, (splitDir + aln->name).c_str());
-            printf("Process %d: Done %s\n", MPIHelper::getInstance().getProcessID(), aln->name.c_str());
+            printf("Process %d: Done %s in %s (of wall-clock time) %s (of CPU time)\n", MPIHelper::getInstance().getProcessID(), aln->name.c_str(), convert_time(getRealTime() - begin_wallclock_time).c_str(), convert_time(getCPUTime() - begin_cpu_time).c_str());
             MPIHelper::getInstance().decrement(WORKING_COUNT);
             continue;
         }
@@ -1262,7 +1266,7 @@ void SuperAlignment::splitPartitions(Params &params) {
         vector<int> small = getSmallParts();
         if (small.size() >= 2) {
             aln->printAlignment(IN_PHYLIP, (splitDir + aln->name).c_str());
-            printf("Process %d: Done %s\n", MPIHelper::getInstance().getProcessID(), aln->name.c_str());
+            printf("Process %d: Done %s in %s (of wall-clock time) %s (of CPU time)\n", MPIHelper::getInstance().getProcessID(), aln->name.c_str(), convert_time(getRealTime() - begin_wallclock_time).c_str(), convert_time(getCPUTime() - begin_cpu_time).c_str());
             MPIHelper::getInstance().decrement(WORKING_COUNT);
             continue;
         } 
@@ -1275,7 +1279,7 @@ void SuperAlignment::splitPartitions(Params &params) {
             }
             if (getSmallParts().size()) {
                 aln->printAlignment(IN_PHYLIP, (splitDir + aln->name).c_str());
-                printf("Process %d: Done %s\n", MPIHelper::getInstance().getProcessID(), aln->name.c_str());
+                printf("Process %d: Done %s in %s (of wall-clock time) %s (of CPU time)\n", MPIHelper::getInstance().getProcessID(), aln->name.c_str(), convert_time(getRealTime() - begin_wallclock_time).c_str(), convert_time(getCPUTime() - begin_cpu_time).c_str());
                 MPIHelper::getInstance().decrement(WORKING_COUNT);
                 continue;
             }
@@ -1296,11 +1300,11 @@ void SuperAlignment::splitPartitions(Params &params) {
         */
         const std::string treefile = prefixPath + aln->name + ".treefile";
         // calculate likelihood for each subset based on the best model
-        std::vector<double> lh[(int)sitesOfParts.size()];
+        std::vector<double> lh[(int)models.size()];
+        sitesOfParts = std::vector<std::vector<int>>(models.size());
         for (int i = 0; i < sitesOfParts.size(); ++i) 
             lh[i] = calcLH(aln, models[i], treefile);
         // reassign sites to subsets
-        for (int i = 0; i < sitesOfParts.size(); ++i) sitesOfParts[i].clear();
         for (int i = 0; i < aln->getNSite(); ++i) {
             Pattern p = aln->getPattern(i);
             vector<double> lhs;
@@ -1315,7 +1319,7 @@ void SuperAlignment::splitPartitions(Params &params) {
 
         if (sitesOfParts.size() - small.size() < 2) {
             aln->printAlignment(IN_PHYLIP, (splitDir + aln->name).c_str());
-            printf("Process %d: Done %s\n", MPIHelper::getInstance().getProcessID(), aln->name.c_str());
+            printf("Process %d: Done %s in %s (of wall-clock time) %s (of CPU time)\n", MPIHelper::getInstance().getProcessID(), aln->name.c_str(), convert_time(getRealTime() - begin_wallclock_time).c_str(), convert_time(getCPUTime() - begin_cpu_time).c_str());
             MPIHelper::getInstance().decrement(WORKING_COUNT);
             continue;
         }
@@ -1362,7 +1366,7 @@ void SuperAlignment::splitPartitions(Params &params) {
                 MPIHelper::getInstance().unlock();
             }
         } else aln->printAlignment(IN_PHYLIP, (splitDir + aln->name).c_str());  
-        printf("Process %d: Done %s\n", MPIHelper::getInstance().getProcessID(), aln->name.c_str());
+        printf("Process %d: Done %s in %s (of wall-clock time) %s (of CPU time)\n", MPIHelper::getInstance().getProcessID(), aln->name.c_str(), convert_time(getRealTime() - begin_wallclock_time).c_str(), convert_time(getCPUTime() - begin_cpu_time).c_str());
         MPIHelper::getInstance().decrement(WORKING_COUNT);
     }
     for (int i = 0; i < partitions.size(); ++i) {
