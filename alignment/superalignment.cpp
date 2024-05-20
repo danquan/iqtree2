@@ -1032,6 +1032,7 @@ void SuperAlignment::splitPartitions(Params &params) {
             "-t", &treefile[0],
             "--sitelh", 
             "--safe", 
+            "--fast",
             "--redo"
         };
         int argc = sizeof(argv) / sizeof(char*);
@@ -1264,15 +1265,12 @@ void SuperAlignment::splitPartitions(Params &params) {
             return small;
         };
         vector<int> small = getSmallParts();
-        if (small.size() >= 2) {
-            aln->printAlignment(IN_PHYLIP, (splitDir + aln->name).c_str());
-            printf("Process %d: Done %s in %s (of wall-clock time) %s (of CPU time)\n", MPIHelper::getInstance().getProcessID(), aln->name.c_str(), convert_time(getRealTime() - begin_wallclock_time).c_str(), convert_time(getCPUTime() - begin_cpu_time).c_str());
-            MPIHelper::getInstance().decrement(WORKING_COUNT);
-            continue;
-        } 
-        if (small.size() == 1) {
-            int pivot = (maxRate + minRate) / 2;
+        if (small.size() > 0) {
             sitesOfParts.assign(2, vector<int>());
+            double pivot;
+            if (small == vector<int>({0, 1})) pivot = upperPivot;
+            else if (small == vector<int>({1, 2})) pivot = lowerPivot;
+            else pivot = (maxRate + minRate) / 2;
             for (int i = 0; i < rates.size(); ++i) {
                 if (rates[i] < pivot) sitesOfParts[0].push_back(i);
                 else sitesOfParts[1].push_back(i);
