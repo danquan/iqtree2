@@ -615,6 +615,7 @@ public:
     static void removeParams();
 
     bool lockMPI = false;
+    bool lock_BIC_check = false;
 
     /**
      * Parallel for QMaker

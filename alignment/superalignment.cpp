@@ -1349,15 +1349,23 @@ void SuperAlignment::splitPartitions(Params &params) {
             subAln->name = aln->name + "_" + std::to_string(i);
             subAlns.push_back(subAln);
         }
-
-        // check if the partition is good
-
-        double oldBic = getBIC(aln);
-        double newBic = 0;
-        for (auto subAln : subAlns)
-            newBic += getBIC(subAln);
-        // cout << "Old BIC: " << oldBic << " New BIC: " << newBic << endl;
-        if (oldBic >= newBic) {
+        if (!params.lock_BIC_check) {
+            // check if the partition is good
+            double oldBic = getBIC(aln);
+            double newBic = 0;
+            for (auto subAln : subAlns)
+                newBic += getBIC(subAln);
+            // cout << "Old BIC: " << oldBic << " New BIC: " << newBic << endl;
+            if (oldBic >= newBic) {
+                for (auto subAln : subAlns) {
+                    MPIHelper::getInstance().lock();
+                    int id = MPIHelper::getInstance().increment(BACK, false);
+                    std::string filename = queuePath + subAln->name + "_" + std::to_string(id);
+                    subAln->printAlignment(IN_PHYLIP, filename.c_str());
+                    MPIHelper::getInstance().unlock();
+                }
+            } else aln->printAlignment(IN_PHYLIP, (splitDir + aln->name).c_str());  
+        } else {
             for (auto subAln : subAlns) {
                 MPIHelper::getInstance().lock();
                 int id = MPIHelper::getInstance().increment(BACK, false);
@@ -1365,7 +1373,8 @@ void SuperAlignment::splitPartitions(Params &params) {
                 subAln->printAlignment(IN_PHYLIP, filename.c_str());
                 MPIHelper::getInstance().unlock();
             }
-        } else aln->printAlignment(IN_PHYLIP, (splitDir + aln->name).c_str());  
+        }
+        
         printf("Process %d: Done %s in %s (of wall-clock time) %s (of CPU time)\n", MPIHelper::getInstance().getProcessID(), aln->name.c_str(), convert_time(getRealTime() - begin_wallclock_time).c_str(), convert_time(getCPUTime() - begin_cpu_time).c_str());
         MPIHelper::getInstance().decrement(WORKING_COUNT);
     }

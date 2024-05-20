@@ -1536,6 +1536,10 @@ void parseArg(int argc, char *argv[], Params &params) {
                 params.split = true;
                 continue;
             }
+            if (strcmp(argv[cnt], "-lock_BIC") == 0 || strcmp(argv[cnt],"--lock_BIC") == 0) {
+                params.lock_BIC_check = true;
+                continue;
+            }
 			if (strcmp(argv[cnt], "-ho") == 0 || strcmp(argv[cnt], "-?") == 0) {
 				usage_iqtree(argv, false);
 				continue;
