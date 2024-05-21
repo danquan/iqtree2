@@ -893,9 +893,10 @@ void SuperAlignment::splitPartitions(Params &params) {
         BACK,
         WORKING_COUNT
     };
-
+/*
     std::iostream null_stream(nullptr);
     std::streambuf* cout_buffer = std::cout.rdbuf(null_stream.rdbuf());
+*/
     const int BOUND_LEN = 50;
 
     sort(partitions.begin(), partitions.end(), [](Alignment *a, Alignment *b) {
@@ -1017,14 +1018,10 @@ void SuperAlignment::splitPartitions(Params &params) {
         } 
     };
 
-    #define INTEGRATED
     auto calcLH = [&](Alignment* aln, std::string model, std::string treefile) {
         std::string filename = prefixPath + aln->name;
         aln->printAlignment(IN_PHYLIP, filename.c_str());
 
-        #ifdef INTEGRATED
-        std::iostream null_stream(nullptr);
-        std::streambuf* cout_buffer = std::cout.rdbuf(null_stream.rdbuf());
         char* argv[] = {
             "", 
             "-s", &filename[0],
@@ -1033,6 +1030,8 @@ void SuperAlignment::splitPartitions(Params &params) {
             "--sitelh", 
             "--safe", 
             "--fast",
+            "-T", &std::to_string(params.num_threads)[0],
+            "-keep-ident",
             "--redo"
         };
         int argc = sizeof(argv) / sizeof(char*);
@@ -1041,12 +1040,6 @@ void SuperAlignment::splitPartitions(Params &params) {
         Checkpoint *checkpoint = new Checkpoint;
         runPhyloAnalysis(Params::getInstance(), checkpoint);
         Params::removeParams();
-        std::cout.rdbuf(cout_buffer);
-        #else
-
-        std::string cmd = "./iqtree2-mpi -s " + filename + " -m " + model + " -t " + treefile + " --sitelh --safe --prefix " + prefixPath + aln->name + " --redo > /dev/null";
-        system(cmd.c_str());
-        #endif
 
         std::vector<double> lh;
         std::ifstream in(prefixPath + aln->name + ".sitelh");
@@ -1080,14 +1073,6 @@ void SuperAlignment::splitPartitions(Params &params) {
         aln->printAlignment(IN_PHYLIP, (prefixPath + aln->name).c_str());
         std::cout << "Finding the best model for " << aln->name << "..." << std::endl;
         
-        #ifndef INTEGRATED
-        std::string cmd = "./iqtree2-mpi -s " + prefixPath + aln->name + " -m MF --fast --mset " + params.model_set + " -p " + prefixPath + aln->name + ".partitions --safe --prefix " + prefixPath + aln->name + " --seed 0 --redo > /dev/null";
-        // cout << cmd << '\n';
-        system(cmd.c_str());
-        #else
-        std::iostream null_stream(nullptr);
-        std::streambuf* cout_buffer = std::cout.rdbuf(null_stream.rdbuf());
-
         std::string arg_s = prefixPath + aln->name;
         std::string arg_prefix = prefixPath + aln->name;
         std::string arg_p = prefixPath + aln->name + ".partitions";
@@ -1100,8 +1085,9 @@ void SuperAlignment::splitPartitions(Params &params) {
             "--prefix", &arg_prefix[0],
             "-m", "MF",
             "--fast",
-            "--redo",
-            "--seed", "0"
+            "-T", &std::to_string(params.num_threads)[0],
+            "-keep-ident",
+            "--redo"
         };
         int argc = sizeof(argv) / sizeof(char*);
         Params::addParams(argc, argv);
@@ -1109,8 +1095,6 @@ void SuperAlignment::splitPartitions(Params &params) {
         Checkpoint *checkpoint = new Checkpoint;
         runPhyloAnalysis(Params::getInstance(), checkpoint);
         Params::removeParams();
-        std::cout.rdbuf(cout_buffer);
-        #endif
 
         ifstream inp(prefixPath + aln->name + ".iqtree");
         std::string line;
@@ -1149,16 +1133,10 @@ void SuperAlignment::splitPartitions(Params &params) {
         std::ifstream inp(prefixPath + aln->name + "_BIC.iqtree");
         if (!inp) {
             aln->printAlignment(IN_PHYLIP, (prefixPath + aln->name).c_str());
-            #ifndef INTEGRATED
-            std::string cmd = "./iqtree2-mpi -s " + prefixPath + aln->name + " -m MF --fast --mset " + params.model_set + " --safe --prefix " + prefixPath + aln->name + "_BIC" + " --seed 0 --redo > /dev/null";
-            system(cmd.c_str());
-            #else
-            std::iostream null_stream(nullptr);
-            std::streambuf* cout_buffer = std::cout.rdbuf(null_stream.rdbuf());
 
             std::string arg_s = prefixPath + aln->name;
             std::string arg_prefix = prefixPath + aln->name + "_BIC";
-
+            std::string treefile = prefixPath + aln->name + ".treefile";
             char* argv[] = {
                 "", 
                 "-s", &arg_s[0],
@@ -1167,8 +1145,9 @@ void SuperAlignment::splitPartitions(Params &params) {
                 "-m", "MF",
                 "--fast",
                 "--safe",
-                "--redo",
-                "--seed", "0"
+                "-T", &std::to_string(params.num_threads)[0],
+                "-keep-ident",
+                "--redo"
             };
             int argc = sizeof(argv) / sizeof(char*);
             Params::addParams(argc, argv);
@@ -1176,9 +1155,7 @@ void SuperAlignment::splitPartitions(Params &params) {
             Checkpoint *checkpoint = new Checkpoint;
             runPhyloAnalysis(Params::getInstance(), checkpoint);
             Params::removeParams();
-            std::cout.rdbuf(cout_buffer);
     
-            #endif
             inp = std::ifstream(prefixPath + aln->name + "_BIC.iqtree");
         }
         std::string line;
@@ -1233,7 +1210,7 @@ void SuperAlignment::splitPartitions(Params &params) {
         double begin_wallclock_time = getRealTime();
         double begin_cpu_time = getCPUTime();
 
-        if (aln->getNPattern() * aln->getNSeq() < partitionCost) {
+        if (false && aln->getNPattern() * aln->getNSeq() < partitionCost) {
             aln->printAlignment(IN_PHYLIP, (splitDir + aln->name).c_str());
             printf("Process %d: Done %s in %s (of wall-clock time) %s (of CPU time)\n", MPIHelper::getInstance().getProcessID(), aln->name.c_str(), convert_time(getRealTime() - begin_wallclock_time).c_str(), convert_time(getCPUTime() - begin_cpu_time).c_str());
             MPIHelper::getInstance().decrement(WORKING_COUNT);
@@ -1265,7 +1242,7 @@ void SuperAlignment::splitPartitions(Params &params) {
             return small;
         };
         vector<int> small = getSmallParts();
-        if (small.size() > 0) {
+        if (false && small.size() > 0) {
             sitesOfParts.assign(2, vector<int>());
             double pivot;
             if (small == vector<int>({0, 1})) pivot = upperPivot;
@@ -1386,8 +1363,8 @@ void SuperAlignment::splitPartitions(Params &params) {
         system(("rm -rf " + prefixPath).c_str());
     }
     
-    std::cout.rdbuf(cout_buffer);
-    cout << "Split partitions took "
+    // std::cout.rdbuf(cout_buffer);
+    std::cout << "Split partitions took "
         << convert_time(getRealTime() - begin_wallclock_time) << " (of wall-clock time) "
         << convert_time(getCPUTime() - begin_cpu_time) << " (of CPU time)" << endl;
 }
