@@ -144,6 +144,7 @@ void Checkpoint::dump(ostream &out) {
 }
 
 void Checkpoint::dump(bool force) {
+    return;
     if (filename == "")
         return;
         

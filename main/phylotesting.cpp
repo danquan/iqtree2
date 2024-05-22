@@ -887,6 +887,9 @@ void runModelFinder(Params &params, IQTree &iqtree, ModelCheckpoint &model_info)
     if (iqtree.isSuperTree()) {
         // partition model selection
         PhyloSuperTree *stree = (PhyloSuperTree*)&iqtree;
+        for (auto it = stree->begin(); it != stree->end(); it++) {
+            printf("Process %d, Partition %s\n", MPIHelper::getInstance().getProcessID(), (*it)->aln->name.c_str());
+        }
         string res_models = "";
         testPartitionModel(params, stree, model_info, models_block, params.num_threads);
         stree->mapTrees();

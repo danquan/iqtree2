@@ -4247,9 +4247,12 @@ void runPhyloAnalysis(Params &params, Checkpoint *checkpoint, IQTree *&tree, Ali
         } else {
             if (params.non_mpi_treesearch) {
                 int sz = ((SuperAlignment*) alignment)->partitions.size();
-                int block_sz = (sz - 1) / MPIHelper::getInstance().getNumProcesses() + 1;
+                int block_sz = sz / MPIHelper::getInstance().getNumProcesses();
                 int startID = MPIHelper::getInstance().getProcessID() * block_sz;
-                int endID = min(startID + block_sz, sz);
+                int endID = startID + block_sz;
+                if (MPIHelper::getInstance().getProcessID() == MPIHelper::getInstance().getNumProcesses() - 1) {
+                    endID = sz;
+                }
                 IntVector seqIDs = IntVector();
                 for (int i = startID; i < endID; i++) {
                     seqIDs.push_back(i);
@@ -4260,7 +4263,7 @@ void runPhyloAnalysis(Params &params, Checkpoint *checkpoint, IQTree *&tree, Ali
                 alignment = ((SuperAlignment*)alignment)->extractPartitions(seqIDs);
                 tree = newIQTree(params, alignment);
 
-                // printf("Size: %d\n", ((PhyloSuperTree*)tree)->size());
+                printf("Process %d, alignment size: %d\n", MPIHelper::getInstance().getProcessID(), alignment->getNSite());
             } else {
                 tree = newIQTree(params, alignment);
             }
