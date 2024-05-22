@@ -1129,14 +1129,13 @@ void SuperAlignment::splitPartitions(Params &params) {
         return models;
     };
 
-    auto getBIC = [&](Alignment* aln) {
+    auto getBIC = [&](Alignment* aln, std::string treefile) {
         std::ifstream inp(prefixPath + aln->name + "_BIC.iqtree");
         if (!inp) {
             aln->printAlignment(IN_PHYLIP, (prefixPath + aln->name).c_str());
 
             std::string arg_s = prefixPath + aln->name;
             std::string arg_prefix = prefixPath + aln->name + "_BIC";
-            std::string treefile = prefixPath + aln->name + ".treefile";
             char* argv[] = {
                 "", 
                 "-s", &arg_s[0],
@@ -1146,6 +1145,7 @@ void SuperAlignment::splitPartitions(Params &params) {
                 "--fast",
                 "--safe",
                 "-T", &std::to_string(params.num_threads)[0],
+                "-t", &treefile[0],
                 "-keep-ident",
                 "--redo"
             };
@@ -1210,7 +1210,7 @@ void SuperAlignment::splitPartitions(Params &params) {
         double begin_wallclock_time = getRealTime();
         double begin_cpu_time = getCPUTime();
 
-        if (false && aln->getNPattern() * aln->getNSeq() < partitionCost) {
+        if (aln->getNPattern() * aln->getNSeq() < partitionCost) {
             aln->printAlignment(IN_PHYLIP, (splitDir + aln->name).c_str());
             printf("Process %d: Done %s in %s (of wall-clock time) %s (of CPU time)\n", MPIHelper::getInstance().getProcessID(), aln->name.c_str(), convert_time(getRealTime() - begin_wallclock_time).c_str(), convert_time(getCPUTime() - begin_cpu_time).c_str());
             MPIHelper::getInstance().decrement(WORKING_COUNT);
@@ -1242,7 +1242,7 @@ void SuperAlignment::splitPartitions(Params &params) {
             return small;
         };
         vector<int> small = getSmallParts();
-        if (false && small.size() > 0) {
+        if (small.size() > 0) {
             sitesOfParts.assign(2, vector<int>());
             double pivot;
             if (small == vector<int>({0, 1})) pivot = upperPivot;
@@ -1326,12 +1326,13 @@ void SuperAlignment::splitPartitions(Params &params) {
         }
         if (!params.lock_BIC_check) {
             // check if the partition is good
-            double oldBic = getBIC(aln);
+            double oldBic = getBIC(aln, treefile);
             double newBic = 0;
             for (auto subAln : subAlns)
-                newBic += getBIC(subAln);
+                newBic += getBIC(subAln, treefile);
             // cout << "Old BIC: " << oldBic << " New BIC: " << newBic << endl;
             if (oldBic >= newBic) {
+                printf("Aln %s is split, better BIC score\n", aln->name.c_str());
                 for (auto subAln : subAlns) {
                     MPIHelper::getInstance().lock();
                     int id = MPIHelper::getInstance().increment(BACK, false);
@@ -1339,8 +1340,12 @@ void SuperAlignment::splitPartitions(Params &params) {
                     subAln->printAlignment(IN_PHYLIP, filename.c_str());
                     MPIHelper::getInstance().unlock();
                 }
-            } else aln->printAlignment(IN_PHYLIP, (splitDir + aln->name).c_str());  
+            } else {
+                printf("Aln %s is not split, worser BIC score\n", aln->name.c_str());
+                aln->printAlignment(IN_PHYLIP, (splitDir + aln->name).c_str());  
+            }
         } else {
+            printf("Aln %s is split, better BIC score\n", aln->name.c_str());    
             for (auto subAln : subAlns) {
                 MPIHelper::getInstance().lock();
                 int id = MPIHelper::getInstance().increment(BACK, false);
