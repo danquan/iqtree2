@@ -139,7 +139,8 @@ int MPIHelper::getSharedCounter(int id, bool enableLock) {
 void MPIHelper::finalize() {
 #ifdef _IQTREE_MPI
     if (Params::getInstance().fpqmaker || Params::getInstance().split)
-        MPI_Win_free(&shmwin);
+        if (getNumProcesses() > 1)
+            MPI_Win_free(&shmwin);
     MPI_Finalize();
 #endif
 }
