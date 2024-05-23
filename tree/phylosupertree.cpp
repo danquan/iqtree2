@@ -1596,6 +1596,7 @@ void PhyloSuperTree::printBestPartitionParams(const char *filename) {
 }
 
 void PhyloSuperTree::printBestPartitionParamsMPI(const char *filename) {
+	printf("Process %d print params\n", MPIHelper::getInstance().getProcessID());
 	SuperAlignment *saln = (SuperAlignment*)aln;
 	Checkpoint* myCheckpoint = new Checkpoint;
 

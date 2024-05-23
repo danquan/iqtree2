@@ -2876,6 +2876,8 @@ void runTreeReconstruction(Params &params, IQTree* &iqtree) {
     /***************************************** DO STOCHASTIC TREE SEARCH *******************************************/
     if (params.min_iterations > 0 && !params.tree_spr) {
         iqtree->doTreeSearch();
+        MPI_Barrier(MPI_COMM_WORLD);
+        printf("Process %d is here\n", MPIHelper::getInstance().getProcessID());
         iqtree->setAlignment(iqtree->aln);
     } else {
         iqtree->candidateTrees.saveCheckpoint();
@@ -2941,6 +2943,7 @@ void runTreeReconstruction(Params &params, IQTree* &iqtree) {
         ((PhyloSuperTree*) iqtree)->computeBranchLengths();
         // ((PhyloSuperTree*) iqtree)->printBestPartitionParams((string(params.out_prefix) + ".best_model.nex").c_str());
         // if (MPIHelper::getInstance().isWorker())
+        MPI_Barrier(MPI_COMM_WORLD);
         ((PhyloSuperTree*) iqtree)->printBestPartitionParamsMPI((string(params.out_prefix) + ".best_model.nex").c_str());
     }
 
@@ -4246,17 +4249,66 @@ void runPhyloAnalysis(Params &params, Checkpoint *checkpoint, IQTree *&tree, Ali
             tree = newIQTreeMix(params, alignment); // tree mixture model
         } else {
             if (params.non_mpi_treesearch) {
-                int sz = ((SuperAlignment*) alignment)->partitions.size();
-                int block_sz = sz / MPIHelper::getInstance().getNumProcesses();
-                int startID = MPIHelper::getInstance().getProcessID() * block_sz;
-                int endID = startID + block_sz;
-                if (MPIHelper::getInstance().getProcessID() == MPIHelper::getInstance().getNumProcesses() - 1) {
-                    endID = sz;
+                SuperAlignment* aln = (SuperAlignment*) alignment;
+                vector<pair<int, int> > costAln;
+                for (int i = 0; i < (int) aln->partitions.size(); i++) {
+                    costAln.push_back(make_pair(aln->partitions[i]->getNSite() * aln->partitions[i]->getNSeq(), i));
                 }
+
+                sort(costAln.begin(), costAln.end(), greater<pair<int, int> >());
+
+                priority_queue<pair<int, int>, vector<pair<int, int> >, greater<pair<int, int> > > pq;
+                for (int i = 0; i < MPIHelper::getInstance().getNumProcesses(); i++) {
+                    pq.push(make_pair(0, i));
+                }
+
+                vector<vector<int> > assigned;
+                for (int i = 0; i < MPIHelper::getInstance().getNumProcesses(); i++) {
+                    assigned.push_back(vector<int>());
+                }
+
+                for (int i = 0; i < (int) costAln.size(); i++) {
+                    int cost = pq.top().first; int idx = pq.top().second; pq.pop();
+                    assigned[idx].push_back(costAln[i].second);
+                    pq.push(make_pair(cost + costAln[i].first, idx));
+                }
+
+                // int sz = ((SuperAlignment*) alignment)->partitions.size();
+                // int block_sz = sz / MPIHelper::getInstance().getNumProcesses();
+                // int startID = MPIHelper::getInstance().getProcessID() * block_sz;
+                // int endID = startID + block_sz;
+                // if (MPIHelper::getInstance().getProcessID() == MPIHelper::getInstance().getNumProcesses() - 1) {
+                //     endID = sz;
+                // }
+
                 IntVector seqIDs = IntVector();
-                for (int i = startID; i < endID; i++) {
-                    seqIDs.push_back(i);
+                if (MPIHelper::getInstance().isMaster()) {
+                    for (int worker = 1; worker < MPIHelper::getInstance().getNumProcesses(); worker++) {
+                        IntVector workerSeqIDs = IntVector();
+                        for (int i = 0; i < assigned[worker].size(); i++) {
+                            workerSeqIDs.push_back(assigned[worker][i]);
+                        }
+
+                        int len = workerSeqIDs.size(); 
+                        MPI_Send(&len, 1, MPI_INT, worker, 100, MPI_COMM_WORLD);
+                        MPI_Send(&workerSeqIDs[0], workerSeqIDs.size(), MPI_INT, worker, 100, MPI_COMM_WORLD);
+                        // printf("Worker %d, assigned size: %d\n", worker, assigned[worker].size());
+                    }
+
+                    for (int i = 0; i < assigned[0].size(); i++) {
+                        seqIDs.push_back(assigned[0][i]);
+                    }
+                } else {
+                    int len;
+                    MPI_Recv(&len, 1, MPI_INT, 0, 100, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+                    seqIDs.resize(len);
+                    MPI_Recv(&seqIDs[0], len, MPI_INT, 0, 100, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
                 }
+                    
+                // for (int i = startID; i < endID; i++) {
+                //     seqIDs.push_back(i);
+                // }
 
                 // printf("Process %d, startID: %d, endID: %d\n", MPIHelper::getInstance().getProcessID(), startID, endID);
 

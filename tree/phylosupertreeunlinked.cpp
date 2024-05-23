@@ -309,6 +309,7 @@ double PhyloSuperTreeUnlinked::doTreeSearch() {
         printf("Process %d: Partition %s\n", MPIHelper::getInstance().getProcessID(), part_tree->aln->name.c_str());
         part_tree->setCheckpoint(ckp);
         double score = part_tree->doTreeSearch();
+        printf("Process %d done: Partition %s\n", MPIHelper::getInstance().getProcessID(), part_tree->aln->name.c_str());
 #pragma omp critical
         {
             getCheckpoint()->putSubCheckpoint(ckp, part_tree->aln->name);

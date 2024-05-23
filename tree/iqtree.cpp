@@ -2302,6 +2302,10 @@ double IQTree::doTreeSearch() {
             estimateNNICutoff(params);
         }
 
+        // if (MPIHelper::getInstance().getProcessID() == 2) {
+        //     printf("Process 2 heree 2\n");
+        // }
+
         Alignment *saved_aln = aln;
 
         string curTree;
@@ -2314,7 +2318,11 @@ double IQTree::doTreeSearch() {
          * Optimize tree with NNI
          *----------------------------------------*/
         pair<int, int> nniInfos; // <num_NNIs, num_steps>
+        // if (MPIHelper::getInstance().getProcessID() == 2)
+        //     printf("Process 2 heree 3\n");
         nniInfos = doNNISearch();
+        // if (MPIHelper::getInstance().getProcessID() == 2)
+        //     printf("Process 2 heree 4\n");
         curTree = getTreeString();
         int pos = addTreeToCandidateSet(curTree, curScore, true, MPIHelper::getInstance().getProcessID());
         if (pos != -2 && pos != -1 && (Params::getInstance().fixStableSplits || Params::getInstance().adaptPertubation))
