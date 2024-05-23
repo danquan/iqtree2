@@ -1036,9 +1036,15 @@ void SuperAlignment::splitPartitions(Params &params) {
         };
         int argc = sizeof(argv) / sizeof(char*);
         Params::addParams(argc, argv);
-        Params::getInstance().lockMPI = true;
+        int numProcesses = MPIHelper::getInstance().getNumProcesses();
+        int processID = MPIHelper::getInstance().getProcessID();
+        MPIHelper::getInstance().setNumProcesses(1);
+        MPIHelper::getInstance().setProcessID(0);
         Checkpoint *checkpoint = new Checkpoint;
         runPhyloAnalysis(Params::getInstance(), checkpoint);
+
+        MPIHelper::getInstance().setNumProcesses(numProcesses);
+        MPIHelper::getInstance().setProcessID(processID);
         Params::removeParams();
 
         std::vector<double> lh;
@@ -1091,9 +1097,15 @@ void SuperAlignment::splitPartitions(Params &params) {
         };
         int argc = sizeof(argv) / sizeof(char*);
         Params::addParams(argc, argv);
-        Params::getInstance().lockMPI = true;
+        int numProcesses = MPIHelper::getInstance().getNumProcesses();
+        int processID = MPIHelper::getInstance().getProcessID();
+        MPIHelper::getInstance().setNumProcesses(1);
+        MPIHelper::getInstance().setProcessID(0);
         Checkpoint *checkpoint = new Checkpoint;
         runPhyloAnalysis(Params::getInstance(), checkpoint);
+
+        MPIHelper::getInstance().setNumProcesses(numProcesses);
+        MPIHelper::getInstance().setProcessID(processID);
         Params::removeParams();
 
         ifstream inp(prefixPath + aln->name + ".iqtree");
@@ -1151,11 +1163,18 @@ void SuperAlignment::splitPartitions(Params &params) {
             };
             int argc = sizeof(argv) / sizeof(char*);
             Params::addParams(argc, argv);
-            Params::getInstance().lockMPI = true;
+            
+            int numProcesses = MPIHelper::getInstance().getNumProcesses();
+            int processID = MPIHelper::getInstance().getProcessID();
+            MPIHelper::getInstance().setNumProcesses(1);
+            MPIHelper::getInstance().setProcessID(0);
             Checkpoint *checkpoint = new Checkpoint;
             runPhyloAnalysis(Params::getInstance(), checkpoint);
+
+            MPIHelper::getInstance().setNumProcesses(numProcesses);
+            MPIHelper::getInstance().setProcessID(processID);
             Params::removeParams();
-    
+
             inp = std::ifstream(prefixPath + aln->name + "_BIC.iqtree");
         }
         std::string line;

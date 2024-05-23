@@ -61,7 +61,6 @@ public:
     ~MPIHelper();
 
     int getNumProcesses() const {
-        if (Params::getInstance().lockMPI) return 1;
         return numProcesses;
     }
 
@@ -70,17 +69,14 @@ public:
     }
 
     int getProcessID() const {
-        if (Params::getInstance().lockMPI) return 0;
         return processID;
     }
 
     bool isMaster() const {
-        if (Params::getInstance().lockMPI) return 1;
         return processID == PROC_MASTER;
     }
 
     bool isWorker() const {
-        if (Params::getInstance().lockMPI) return 0;
         return processID != PROC_MASTER;
     }
 

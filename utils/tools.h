@@ -614,7 +614,6 @@ public:
     static void addParams(int argc, char *argv[]);
     static void removeParams();
 
-    bool lockMPI = false;
     bool lock_BIC_check = false;
 
     /**
