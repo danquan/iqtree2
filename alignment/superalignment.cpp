@@ -1188,7 +1188,7 @@ void SuperAlignment::splitPartitions(Params &params) {
     };
     if (MPIHelper::getInstance().isMaster()) {
         for (auto aln : partitions) {
-            int id = MPIHelper::getInstance().increment(BACK);
+            int id = MPIHelper::getInstance().incrementSharedCounter(BACK);
             std::string filename = queuePath + aln->name + "_" + std::to_string(id);
             aln->printAlignment(IN_PHYLIP, filename.c_str());
         }
@@ -1206,9 +1206,9 @@ void SuperAlignment::splitPartitions(Params &params) {
         }
         int id = -1;
         MPIHelper::getInstance().lock();
-        if (MPIHelper::getInstance().getSharedCounter(FRONT, false) < MPIHelper::getInstance().getSharedCounter(BACK, false)) {
-            id = MPIHelper::getInstance().increment(FRONT, false);
-            MPIHelper::getInstance().increment(WORKING_COUNT, false);
+        if (MPIHelper::getInstance().getSharedCounter(FRONT) < MPIHelper::getInstance().getSharedCounter(BACK)) {
+            id = MPIHelper::getInstance().incrementSharedCounter(FRONT);
+            MPIHelper::getInstance().incrementSharedCounter(WORKING_COUNT);
         }
         MPIHelper::getInstance().unlock();
         if (id == -1) continue;
@@ -1232,7 +1232,7 @@ void SuperAlignment::splitPartitions(Params &params) {
         if (aln->getNPattern() * aln->getNSeq() < partitionCost) {
             aln->printAlignment(IN_PHYLIP, (splitDir + aln->name).c_str());
             printf("Process %d: Done %s in %s (of wall-clock time) %s (of CPU time)\n", MPIHelper::getInstance().getProcessID(), aln->name.c_str(), convert_time(getRealTime() - begin_wallclock_time).c_str(), convert_time(getCPUTime() - begin_cpu_time).c_str());
-            MPIHelper::getInstance().decrement(WORKING_COUNT);
+            MPIHelper::getInstance().decrementSharedCounter(WORKING_COUNT);
             continue;
         }
     
@@ -1274,7 +1274,7 @@ void SuperAlignment::splitPartitions(Params &params) {
             if (getSmallParts().size()) {
                 aln->printAlignment(IN_PHYLIP, (splitDir + aln->name).c_str());
                 printf("Process %d: Done %s in %s (of wall-clock time) %s (of CPU time)\n", MPIHelper::getInstance().getProcessID(), aln->name.c_str(), convert_time(getRealTime() - begin_wallclock_time).c_str(), convert_time(getCPUTime() - begin_cpu_time).c_str());
-                MPIHelper::getInstance().decrement(WORKING_COUNT);
+                MPIHelper::getInstance().decrementSharedCounter(WORKING_COUNT);
                 continue;
             }
         }
@@ -1314,7 +1314,7 @@ void SuperAlignment::splitPartitions(Params &params) {
         if (sitesOfParts.size() - small.size() < 2) {
             aln->printAlignment(IN_PHYLIP, (splitDir + aln->name).c_str());
             printf("Process %d: Done %s in %s (of wall-clock time) %s (of CPU time)\n", MPIHelper::getInstance().getProcessID(), aln->name.c_str(), convert_time(getRealTime() - begin_wallclock_time).c_str(), convert_time(getCPUTime() - begin_cpu_time).c_str());
-            MPIHelper::getInstance().decrement(WORKING_COUNT);
+            MPIHelper::getInstance().decrementSharedCounter(WORKING_COUNT);
             continue;
         }
         for (auto i: small) {
@@ -1354,7 +1354,7 @@ void SuperAlignment::splitPartitions(Params &params) {
                 printf("Aln %s is split, better BIC score\n", aln->name.c_str());
                 for (auto subAln : subAlns) {
                     MPIHelper::getInstance().lock();
-                    int id = MPIHelper::getInstance().increment(BACK, false);
+                    int id = MPIHelper::getInstance().incrementSharedCounter(BACK);
                     std::string filename = queuePath + subAln->name + "_" + std::to_string(id);
                     subAln->printAlignment(IN_PHYLIP, filename.c_str());
                     MPIHelper::getInstance().unlock();
@@ -1367,7 +1367,7 @@ void SuperAlignment::splitPartitions(Params &params) {
             printf("Aln %s is split, better BIC score\n", aln->name.c_str());    
             for (auto subAln : subAlns) {
                 MPIHelper::getInstance().lock();
-                int id = MPIHelper::getInstance().increment(BACK, false);
+                int id = MPIHelper::getInstance().incrementSharedCounter(BACK);
                 std::string filename = queuePath + subAln->name + "_" + std::to_string(id);
                 subAln->printAlignment(IN_PHYLIP, filename.c_str());
                 MPIHelper::getInstance().unlock();
@@ -1375,7 +1375,7 @@ void SuperAlignment::splitPartitions(Params &params) {
         }
         
         printf("Process %d: Done %s in %s (of wall-clock time) %s (of CPU time)\n", MPIHelper::getInstance().getProcessID(), aln->name.c_str(), convert_time(getRealTime() - begin_wallclock_time).c_str(), convert_time(getCPUTime() - begin_cpu_time).c_str());
-        MPIHelper::getInstance().decrement(WORKING_COUNT);
+        MPIHelper::getInstance().decrementSharedCounter(WORKING_COUNT);
     }
     for (int i = 0; i < partitions.size(); ++i) {
         delete partitions[i];

@@ -242,12 +242,14 @@ private:
     MPI_Win shmwin;
 #endif
     int *shared_counter;
+    int lockCounter = 0;
 
 public:
-    int increment(int id = 0, bool enableLock = true);
-    int decrement(int id = 0, bool enableLock = true);
-    int getSharedCounter(int id = 0, bool enableLock = true);
-    void setTask(int delta);
+
+    int incrementSharedCounter(int id = 0);
+    int decrementSharedCounter(int id = 0);
+    int getSharedCounter(int id = 0);
+    void setSharedCounter(int delta, int id = 0);
     void lock();
     void unlock();
 

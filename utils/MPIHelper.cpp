@@ -67,13 +67,13 @@ void MPIHelper::initSharedMemory() {
 #endif
 }
 
-int MPIHelper::increment(int id, bool enableLock) {
+int MPIHelper::incrementSharedCounter(int id) {
 #ifdef _IQTREE_MPI
     if (getNumProcesses() > 1) {
         int one = 1, ret;
-        if (enableLock) MPI_Win_lock(MPI_LOCK_EXCLUSIVE, 0, 0, shmwin);
+        lock();
         MPI_Fetch_and_op(&one, &ret, MPI_INT, 0, id, MPI_SUM, shmwin);
-        if (enableLock) MPI_Win_unlock(0, shmwin);
+        unlock();
         return ret;
     } else {
         return shared_counter[id]++;
@@ -81,13 +81,13 @@ int MPIHelper::increment(int id, bool enableLock) {
 #endif
 }
 
-int MPIHelper::decrement(int id, bool enableLock) {
+int MPIHelper::decrementSharedCounter(int id) {
 #ifdef _IQTREE_MPI
     if (getNumProcesses() > 1) {
         int minus_one = -1, ret;
-        if (enableLock) MPI_Win_lock(MPI_LOCK_EXCLUSIVE, 0, 0, shmwin);
+        lock();
         MPI_Fetch_and_op(&minus_one, &ret, MPI_INT, 0, id, MPI_SUM, shmwin);
-        if (enableLock) MPI_Win_unlock(0, shmwin);
+        unlock();
         return ret;
     } else {
         return shared_counter[id]--;
@@ -100,7 +100,10 @@ int MPIHelper::decrement(int id, bool enableLock) {
 void MPIHelper::lock() {
 #ifdef _IQTREE_MPI
     if (getNumProcesses() > 1) {
-        MPI_Win_lock(MPI_LOCK_EXCLUSIVE, 0, 0, shmwin);
+        if (lockCounter == 0) {
+            MPI_Win_lock(MPI_LOCK_EXCLUSIVE, 0, 0, shmwin);
+        }
+        lockCounter++;
     }
 #endif
 }
@@ -109,28 +112,35 @@ void MPIHelper::lock() {
 void MPIHelper::unlock() {
 #ifdef _IQTREE_MPI
     if (getNumProcesses() > 1) {
-        MPI_Win_unlock(0, shmwin);
+        lockCounter--;
+        if (lockCounter == 0) {
+            MPI_Win_unlock(0, shmwin);
+        }
     }
 #endif
 }
 
-void MPIHelper::setTask(int delta) {
+void MPIHelper::setSharedCounter(int value, int id) {
 #ifdef _IQTREE_MPI
-    MPI_Win_lock(MPI_LOCK_EXCLUSIVE, 0, 0, shmwin);
-    MPI_Accumulate(&delta, 1, MPI_INT, 0, 0, 1, MPI_INT, MPI_SUM, shmwin);
-    MPI_Win_unlock(0, shmwin);
+    if (getNumProcesses() == 1) {
+        shared_counter[id] = value;
+        return;
+    }
+    lock();
+    MPI_Put(&value, 1, MPI_INT, 0, id, 1, MPI_INT, shmwin);
+    unlock();
 #else
     assert(0);
 #endif
 }
 
-int MPIHelper::getSharedCounter(int id, bool enableLock) {
+int MPIHelper::getSharedCounter(int id) {
 #ifdef _IQTREE_MPI
     if (getNumProcesses() > 1) {
         int ret;
-        if (enableLock) MPI_Win_lock(MPI_LOCK_EXCLUSIVE, 0, 0, shmwin);
+        lock();
         MPI_Get(&ret, 1, MPI_INT, 0, id, 1, MPI_INT, shmwin);
-        if (enableLock) MPI_Win_unlock(0, shmwin);
+        unlock();
         return ret;
     } else return shared_counter[id];
 #endif
