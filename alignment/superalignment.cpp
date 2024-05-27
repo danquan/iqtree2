@@ -893,10 +893,10 @@ void SuperAlignment::splitPartitions(Params &params) {
         BACK,
         WORKING_COUNT
     };
-/*
+
     std::iostream null_stream(nullptr);
     std::streambuf* cout_buffer = std::cout.rdbuf(null_stream.rdbuf());
-*/
+
     const int BOUND_LEN = 50;
 
     sort(partitions.begin(), partitions.end(), [](Alignment *a, Alignment *b) {
@@ -1387,7 +1387,7 @@ void SuperAlignment::splitPartitions(Params &params) {
         system(("rm -rf " + prefixPath).c_str());
     }
     
-    // std::cout.rdbuf(cout_buffer);
+    std::cout.rdbuf(cout_buffer);
     std::cout << "Split partitions took "
         << convert_time(getRealTime() - begin_wallclock_time) << " (of wall-clock time) "
         << convert_time(getCPUTime() - begin_cpu_time) << " (of CPU time)" << endl;
