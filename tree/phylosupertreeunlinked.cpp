@@ -279,7 +279,20 @@ pair<int, int> PhyloSuperTreeUnlinked::doNNISearch(bool write_info) {
     }
 
     setCurScore(score);
-    cout << "Log-likelihood: " << score << endl;
+
+    if (!params->non_mpi_treesearch) {
+        cout << "Log-likelihood: " << score << endl;
+    } else {
+        MPI_Barrier(MPI_COMM_WORLD);
+
+        double summary_score = score;
+        MPI_Allreduce(&score, &summary_score, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+
+        if (MPIHelper::getInstance().isMaster()) {
+            cout << "Log-likelihood: " << summary_score << endl;
+        }
+    }
+
     return std::make_pair(NNIs, NNI_steps);
 }
 

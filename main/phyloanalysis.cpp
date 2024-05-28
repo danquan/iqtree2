@@ -2398,7 +2398,17 @@ void printFinalSearchInfo(Params &params, IQTree &iqtree, double search_cpu_time
         }
         cout << endl;
     } else {
-        cout << "Total tree length: " << iqtree.treeLength() << endl;
+        if (!params.non_mpi_treesearch)
+            cout << "Total tree length: " << iqtree.treeLength() << endl;
+        else {
+            MPI_Barrier(MPI_COMM_WORLD);
+
+            double length = iqtree.treeLength();
+            double summary_length = length;
+
+            MPI_Allreduce(&length, &summary_length, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+            cout << "Total tree length: " << summary_length << endl;
+        }
     }
 
     if (iqtree.isSuperTree() && verbose_mode >= VB_MAX) {
@@ -2947,7 +2957,19 @@ void runTreeReconstruction(Params &params, IQTree* &iqtree) {
         ((PhyloSuperTree*) iqtree)->printBestPartitionParamsMPI((string(params.out_prefix) + ".best_model.nex").c_str());
     }
 
-    cout << "BEST SCORE FOUND : " << iqtree->getCurScore() << endl;
+    if (!params.non_mpi_treesearch) {
+        cout << "BEST SCORE FOUND : " << iqtree->getCurScore() << endl;
+    } else {
+        MPI_Barrier(MPI_COMM_WORLD);
+
+        double score = iqtree->getCurScore();
+        double summary_score = score;
+        MPI_Allreduce(&score, &summary_score, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+
+        if (MPIHelper::getInstance().isMaster()) {
+            cout << "BEST SCORE FOUND : " << summary_score << endl;
+        }
+    }
 
     if (params.write_candidate_trees) {
         printTrees(iqtree->getBestTrees(), params, ".imd_trees");
@@ -4473,7 +4495,21 @@ void runPhyloAnalysis(Params &params, Checkpoint *checkpoint, IQTree *&tree, Ali
     }
 
     checkpoint->putBool("finished", true);
-    checkpoint->dump(true);
+
+    MPI_Barrier(MPI_COMM_WORLD);
+
+    Checkpoint* summary_checkpoint = checkpoint;
+    if (MPIHelper::getInstance().isWorker()) {
+        MPIHelper::getInstance().sendCheckpoint(summary_checkpoint, 0);
+    } else {
+        for (int i = 1; i < MPIHelper::getInstance().getNumProcesses(); i++) {
+            Checkpoint* worker_ckpt = new Checkpoint;
+            MPIHelper::getInstance().recvCheckpoint(worker_ckpt, i);
+            summary_checkpoint->putSubCheckpoint(worker_ckpt, "");
+        }
+    }
+
+    summary_checkpoint->dump(true);
 }
 
 void runPhyloAnalysis(Params &params, Checkpoint *checkpoint) {

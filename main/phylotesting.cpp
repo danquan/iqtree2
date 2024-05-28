@@ -676,8 +676,22 @@ string computeFastMLTree(Params &params, Alignment *aln,
         iqtree->getCheckpoint()->putBool("finishedFastMLTree", true);
         iqtree->getCheckpoint()->dump();
         //        cout << "initTree: " << initTree << endl;
-        cout << "Time for fast ML tree search: " << getRealTime() - start_time << " seconds" << endl;
-        cout << endl;
+        
+        if (!params.non_mpi_treesearch) {
+            cout << "Time for fast ML tree search: " << getRealTime() - start_time << " seconds" << endl;
+            cout << endl;
+        } else {
+            MPI_Barrier(MPI_COMM_WORLD);
+            
+            double runtime = getRealTime() - start_time;
+            double summary_time = runtime;
+            MPI_Allreduce(&runtime, &summary_time, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+
+            if (MPIHelper::getInstance().isMaster()) {
+                cout << "Time for fast ML tree search: " << summary_time << " seconds" << endl;
+                cout << endl;
+            }
+        }
     }
 
     // restore model epsilon
@@ -947,7 +961,8 @@ void runModelFinder(Params &params, IQTree &iqtree, ModelCheckpoint &model_info)
     
     // force to dump all checkpointing information
     if (MPIHelper::getInstance().getProcessID() == 0) {
-        // summary_model.dump(true);
+        ofstream out((string)params.out_prefix + ".model");
+        summary_model.dump(out);
         // model_info = summary_model;
     }
     
@@ -961,9 +976,24 @@ void runModelFinder(Params &params, IQTree &iqtree, ModelCheckpoint &model_info)
     real_time = getRealTime() - real_time;
     cout << endl;
     cout << "All model information printed to " << model_info.getFileName() << endl;
-    cout << "CPU time for ModelFinder: " << cpu_time << " seconds (" << convert_time(cpu_time) << ")" << endl;
-    cout << "Wall-clock time for ModelFinder: " << real_time << " seconds (" << convert_time(real_time) << ")" << endl;
     
+    if (!params.non_mpi_treesearch) {
+        cout << "CPU time for ModelFinder: " << cpu_time << " seconds (" << convert_time(cpu_time) << ")" << endl;
+        cout << "Wall-clock time for ModelFinder: " << real_time << " seconds (" << convert_time(real_time) << ")" << endl;
+    } else {
+        MPI_Barrier(MPI_COMM_WORLD);
+        
+        double cpu_time_summary = cpu_time;
+        double real_time_summary = real_time;
+        MPI_Allreduce(&cpu_time, &cpu_time_summary, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+        MPI_Allreduce(&real_time, &real_time_summary, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+        
+        if (MPIHelper::getInstance().isMaster()) {
+            cout << "CPU time for ModelFinder: " << cpu_time_summary << " seconds (" << convert_time(cpu_time_summary) << ")" << endl;
+            cout << "Wall-clock time for ModelFinder: " << real_time_summary << " seconds (" << convert_time(real_time_summary) << ")" << endl;
+        }
+    }
+
     //        alignment = iqtree.aln;
     if (test_only) {
         params.min_iterations = 0;

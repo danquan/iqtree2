@@ -718,8 +718,18 @@ double PartitionModel::optimizeParameters(int fixed_len, bool write_info, double
         prev_tree_lh = tree_lh;
     }
     
-    if (verbose_mode >= VB_MED || write_info)
-		cout << "Optimal log-likelihood: " << tree_lh << endl;
+    if (verbose_mode >= VB_MED || write_info) {
+        if (!Params::getInstance().non_mpi_treesearch)
+		    cout << "Optimal log-likelihood: " << tree_lh << endl;
+        else {
+            MPI_Barrier(MPI_COMM_WORLD);
+
+            double summary_tree_lh = tree_lh;
+            MPI_Allreduce(&tree_lh, &summary_tree_lh, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+            cout << "Optimal log-likelihood: " << summary_tree_lh << endl;
+        }
+    }
+    
     // write linked_models
     if (verbose_mode <= VB_MIN && write_info) {
         for (auto it = linked_models.begin(); it != linked_models.end(); it++)

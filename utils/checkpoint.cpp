@@ -10,6 +10,7 @@
 #include "timeutil.h"
 #include "gzstream.h"
 #include <cstdio>
+#include "../utils/MPIHelper.h"
 
 const char* CKP_HEADER =     "--- # IQ-TREE Checkpoint ver >= 1.6";
 const char* CKP_HEADER_OLD = "--- # IQ-TREE Checkpoint";
@@ -144,7 +145,7 @@ void Checkpoint::dump(ostream &out) {
 }
 
 void Checkpoint::dump(bool force) {
-    return;
+    if (MPIHelper::getInstance().isWorker()) return;
     if (filename == "")
         return;
         
