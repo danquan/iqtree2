@@ -4495,21 +4495,7 @@ void runPhyloAnalysis(Params &params, Checkpoint *checkpoint, IQTree *&tree, Ali
     }
 
     checkpoint->putBool("finished", true);
-
-    MPI_Barrier(MPI_COMM_WORLD);
-
-    Checkpoint* summary_checkpoint = checkpoint;
-    if (MPIHelper::getInstance().isWorker()) {
-        MPIHelper::getInstance().sendCheckpoint(summary_checkpoint, 0);
-    } else {
-        for (int i = 1; i < MPIHelper::getInstance().getNumProcesses(); i++) {
-            Checkpoint* worker_ckpt = new Checkpoint;
-            MPIHelper::getInstance().recvCheckpoint(worker_ckpt, i);
-            summary_checkpoint->putSubCheckpoint(worker_ckpt, "");
-        }
-    }
-
-    summary_checkpoint->dump(true);
+    checkpoint->dump(true);
 }
 
 void runPhyloAnalysis(Params &params, Checkpoint *checkpoint) {
