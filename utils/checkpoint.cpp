@@ -145,7 +145,6 @@ void Checkpoint::dump(ostream &out) {
 }
 
 void Checkpoint::dump(bool force) {
-    if (MPIHelper::getInstance().isWorker()) return;
     if (filename == "")
         return;
         

@@ -825,7 +825,7 @@ void runModelFinder(Params &params, IQTree &iqtree, ModelCheckpoint &model_info)
     //            ((PhyloSuperTree*) &iqtree)->mapTrees();
     double cpu_time = getCPUTime();
     double real_time = getRealTime();
-    model_info.setFileName((string)params.out_prefix + ".model.gz");
+    model_info.setFileName((string)params.out_prefix + to_string(MPIHelper::getInstance().getProcessID()) + ".model.gz");
     model_info.setDumpInterval(params.checkpoint_dump_interval);
     
     bool ok_model_file = false;

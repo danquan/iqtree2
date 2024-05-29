@@ -327,16 +327,17 @@ double PhyloSuperTreeUnlinked::doTreeSearch() {
         {
             getCheckpoint()->putSubCheckpoint(ckp, part_tree->aln->name);
             getCheckpoint()->dump();
-
-            /*cmust*/ cout << "Partition " << part_tree->aln->name
+            tree_lh += score;
+            /*
+            cout << "Partition " << part_tree->aln->name
                  << " / Iterations: " << part_tree->stop_rule.getCurIt()
                  << " / LogL: " << score
                  << " / Time: " << convert_time(getRealTime() - params->start_real_time)
                  << endl;
-            
-            printf("Partition %s / Iterations: %d / LogL: %.2f / Time: %.2f\n",
+            */
+            printf("Partition %s / Iterations: %d / LogL: %.2f / Time: %s\n",
                    part_tree->aln->name.c_str(), part_tree->stop_rule.getCurIt(), score,
-                   convert_time(getRealTime() - params->start_real_time));
+                   convert_time(getRealTime() - params->start_real_time).c_str());
         }
         delete ckp;
         part_tree->setCheckpoint(getCheckpoint());
