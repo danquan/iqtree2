@@ -294,7 +294,7 @@ double PartitionModel::targetFunk(double x[]) {
     int ntrees = tree->size();
     if (tree->part_order.empty()) tree->computePartitionOrder();
 
-    if (Params::getInstance().fpqmaker) {
+    if (Params::getInstance().cpqmaker) {
         DoubleVector results(tree->size(), 0.0);
         
         if (MPIHelper::getInstance().isMaster()) {
@@ -538,13 +538,13 @@ double PartitionModel::optimizeParameters(int fixed_len, bool write_info, double
 
     for (int step = 0; step < Params::getInstance().model_opt_steps; step++) {
         tree_lh = 0.0;
-        if (Params::getInstance().pqmaker || Params::getInstance().fpqmaker) {
+        if (Params::getInstance().pqmaker || Params::getInstance().cpqmaker) {
             tree_lhs = DoubleVector(ntrees, 0.0);
         }
 
         if (tree->part_order.empty()) tree->computePartitionOrder();
 
-        if (false && Params::getInstance().fpqmaker) {
+        if (false && Params::getInstance().cpqmaker) {
             if (MPIHelper::getInstance().isMaster()) {
                 MPIHelper::getInstance().setSharedCounter(0);
             }
