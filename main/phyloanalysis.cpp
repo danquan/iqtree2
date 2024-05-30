@@ -769,9 +769,23 @@ void reportTree(ofstream &out, Params &params, PhyloTree &tree, double tree_lh, 
 //
 //        out << "Bayesian information criterion (BIC) score: " << BIC_score << endl;
 //    } else
-    out    << "Akaike information criterion (AIC) score: " << AIC_score << endl;
-    out << "Corrected Akaike information criterion (AICc) score: " << AICc_score << endl;
-    out << "Bayesian information criterion (BIC) score: " << BIC_score << endl;
+
+    double summary_AIC_score = AIC_score;
+    double summary_AICc_score = AICc_score;
+    double summary_BIC_score = BIC_score;
+    MPI_Allgather(&AIC_score, 1, MPI_DOUBLE, &summary_AIC_score, 1, MPI_DOUBLE, MPI_COMM_WORLD);
+    MPI_Allgather(&AICc_score, 1, MPI_DOUBLE, &summary_AICc_score, 1, MPI_DOUBLE, MPI_COMM_WORLD);
+    MPI_Allgather(&BIC_score, 1, MPI_DOUBLE, &summary_BIC_score, 1, MPI_DOUBLE, MPI_COMM_WORLD);
+
+    if (!params.non_mpi_treesearch) {
+        out    << "Akaike information criterion (AIC) score: " << AIC_score << endl;
+        out << "Corrected Akaike information criterion (AICc) score: " << AICc_score << endl;
+        out << "Bayesian information criterion (BIC) score: " << BIC_score << endl;
+    } else {
+        out    << "Akaike information criterion (AIC) score: " << summary_AIC_score << endl;
+        out << "Corrected Akaike information criterion (AICc) score: " << summary_AICc_score << endl;
+        out << "Bayesian information criterion (BIC) score: " << summary_BIC_score << endl;
+    }
 
     if (ssize <= df && main_tree) {
 

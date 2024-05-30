@@ -85,7 +85,9 @@ public:
     void printPartitionRaxml(const char *filename);
     
     void printBestPartition(const char *filename);
+    void printBestPartitionMPI(const char *filename);
     void printBestPartitionRaxml(const char *filename);
+    void printBestPartitionRaxmlMPI(const char *filename);
 
     void splitPartitions(Params &params);
 

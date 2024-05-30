@@ -60,9 +60,27 @@ int PhyloSuperTreeUnlinked::computeParsimonyTree(const char *out_prefix, Alignme
         try {
             ofstream out;
             out.open(file_name.c_str());
+
+            stringstream ss;
             for (i = 0; i < size(); i++) {
-                at(i)->printTree(out, WT_NEWLINE);
+                at(i)->printTree(ss, WT_NEWLINE);
             }
+
+            MPI_Barrier(MPI_COMM_WORLD);
+            int LOG_TAG = 20;
+
+            if (MPIHelper::getInstance().isWorker()) {
+                string str = ss.str();
+                MPIHelper::getInstance().sendString(str, 0, LOG_TAG);
+            } else {
+                for (int worker = 1; worker < MPIHelper::getInstance().getNumProcesses(); worker++) {
+                    string str;
+                    MPIHelper::getInstance().recvString(str, worker, LOG_TAG);
+                    out << str;
+                }
+                out << ss.str();
+            }
+
             out.close();
         } catch (...) {
             outError("Cannot write to file ", file_name);

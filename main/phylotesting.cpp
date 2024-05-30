@@ -2183,8 +2183,13 @@ void testPartitionModel(Params &params, PhyloSuperTree* in_tree, ModelCheckpoint
     pre_inf_score = inf_score;
 
 	if (!test_merge) {
-		super_aln->printBestPartition((string(params.out_prefix) + ".best_scheme.nex").c_str());
-		super_aln->printBestPartitionRaxml((string(params.out_prefix) + ".best_scheme").c_str());
+        if (!params.non_mpi_treesearch) {
+            super_aln->printBestPartition((string(params.out_prefix) + ".best_scheme.nex").c_str());
+            super_aln->printBestPartitionRaxml((string(params.out_prefix) + ".best_scheme").c_str());
+        } else {
+            super_aln->printBestPartitionMPI((string(params.out_prefix) + ".best_scheme.nex").c_str());
+            super_aln->printBestPartitionRaxmlMPI((string(params.out_prefix) + ".best_scheme").c_str());
+        }
         model_info.dump();
 		return;
 	}

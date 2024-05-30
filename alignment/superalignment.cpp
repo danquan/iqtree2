@@ -804,6 +804,94 @@ void SuperAlignment::printBestPartition(const char *filename) {
     
 }
 
+void SuperAlignment::printBestPartitionMPI(const char *filename) {
+    try {
+        ofstream out;
+
+        if (MPIHelper::getInstance().isMaster()) {
+            out.exceptions(ios::failbit | ios::badbit);
+            out.open(filename);
+        }
+
+        out << "#nexus" << endl
+        << "begin sets;" << endl;
+
+        stringstream ss;
+        int part;
+        for (part = 0; part < partitions.size(); part++) {
+            string name = partitions[part]->name;
+            replace(name.begin(), name.end(), '+', '_');
+            ss << "  charset " << name << " = ";
+            if (!partitions[part]->aln_file.empty()) ss << partitions[part]->aln_file << ": ";
+            if (partitions[part]->seq_type == SEQ_CODON)
+                ss << "CODON, ";
+            string pos = partitions[part]->position_spec;
+            replace(pos.begin(), pos.end(), ',' , ' ');
+            ss << pos << ";" << endl;
+        }
+
+        int LOG_TAG = 20;
+        MPI_Barrier(MPI_COMM_WORLD);
+        if (MPIHelper::getInstance().isWorker()) {
+            string str = ss.str();
+            MPIHelper::getInstance().sendString(str, 0, LOG_TAG);
+        } else {
+            string summary = ss.str();
+            for (int i = 1; i < MPIHelper::getInstance().getNumProcesses(); i++) {
+                string str;
+                MPIHelper::getInstance().recvString(str, i, LOG_TAG);
+                summary += str;
+            }
+
+            out << summary;
+        }
+
+        bool ok_model = true;
+        for (part = 0; part < partitions.size(); part++)
+            if (partitions[part]->model_name.empty()) {
+                ok_model = false;
+                break;
+            }
+        
+        // clear stringstream
+        ss.str("");
+        ss.clear();
+
+        if (ok_model) {
+            out << "  charpartition mymodels =" << endl;
+            for (part = 0; part < partitions.size(); part++) {
+                string name = partitions[part]->name;
+                replace(name.begin(), name.end(), '+', '_');
+                if (part > 0) ss << "," << endl;
+                ss << "    " << partitions[part]->model_name << ": " << name;
+            }
+            ss << ";" << endl;
+        }
+
+        MPI_Barrier(MPI_COMM_WORLD);
+        if (MPIHelper::getInstance().isWorker()) {
+            string str = ss.str();
+            MPIHelper::getInstance().sendString(str, 0, LOG_TAG);
+        } else {
+            string summary = ss.str();
+            for (int i = 1; i < MPIHelper::getInstance().getNumProcesses(); i++) {
+                string str;
+                MPIHelper::getInstance().recvString(str, i, LOG_TAG);
+                summary += str;
+            }
+
+            out << summary;
+        }
+
+        out << "end;" << endl;
+        out.close();
+        cout << "Partition information was printed to " << filename << endl;
+    } catch (ios::failure &) {
+        outError(ERR_WRITE_OUTPUT, filename);
+    }
+    
+}
+
 
 void SuperAlignment::printPartitionRaxml(const char *filename) {
     int part;
@@ -875,6 +963,72 @@ void SuperAlignment::printBestPartitionRaxml(const char *filename) {
             
             out << ", " << name << " = " << partitions[part]->position_spec << endl;
         }
+        out.close();
+        cout << "Partition information in Raxml format was printed to " << filename << endl;
+    } catch (ios::failure &) {
+        outError(ERR_WRITE_OUTPUT, filename);
+    }
+    
+}
+
+void SuperAlignment::printBestPartitionRaxmlMPI(const char *filename) {
+    int part;
+//    for (part = 0; part < partitions.size(); part++) {
+//        if (partitions[part]->aln_file != "") {
+//            cout << "INFO: Printing partition in RAxML format is not possible" << endl;
+//            return;
+//        }
+//    }
+    try {
+        ofstream out;
+        if (MPIHelper::getInstance().isMaster()) {
+            out.exceptions(ios::failbit | ios::badbit);
+            out.open(filename);
+        }
+
+        stringstream ss;
+        for (part = 0; part < partitions.size(); part++) {
+            string name = partitions[part]->name;
+            replace(name.begin(), name.end(), '+', '_');
+            if (partitions[part]->model_name.find("+ASC") != string::npos)
+                ss << "ASC_";
+            switch (partitions[part]->seq_type) {
+                case SEQ_DNA: ss << "DNA"; break;
+                case SEQ_BINARY: ss << "BIN"; break;
+                case SEQ_MORPH: ss << "MULTI"; break;
+                case SEQ_PROTEIN:
+                    ss << partitions[part]->model_name.substr(0, partitions[part]->model_name.find_first_of("*{+"));
+                    break;
+                case SEQ_CODON:
+                    ss << "CODON_" << partitions[part]->model_name.substr(0, partitions[part]->model_name.find_first_of("*{+"));
+                    break;
+                default: ss << partitions[part]->model_name; break;
+            }
+            if (partitions[part]->model_name.find("+FO") != string::npos)
+                ss << "X";
+            else if (partitions[part]->model_name.find("+F") != string::npos)
+                ss << "F";
+            
+            ss << ", " << name << " = " << partitions[part]->position_spec << endl;
+        }
+
+        MPI_Barrier(MPI_COMM_WORLD);
+        int LOG_TAG = 20;
+        
+        if (MPIHelper::getInstance().isWorker()) {
+            string str = ss.str();
+            MPIHelper::getInstance().sendString(str, 0, LOG_TAG);
+        } else {
+            string summary = ss.str();
+            for (int i = 1; i < MPIHelper::getInstance().getNumProcesses(); i++) {
+                string str;
+                MPIHelper::getInstance().recvString(str, i, LOG_TAG);
+                summary += str;
+            }
+
+            out << summary;
+        }
+
         out.close();
         cout << "Partition information in Raxml format was printed to " << filename << endl;
     } catch (ios::failure &) {
