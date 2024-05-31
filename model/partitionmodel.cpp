@@ -294,50 +294,10 @@ double PartitionModel::targetFunk(double x[]) {
     int ntrees = tree->size();
     if (tree->part_order.empty()) tree->computePartitionOrder();
 
-    if (Params::getInstance().cpqmaker) {
-        DoubleVector results(tree->size(), 0.0);
-        
-        if (MPIHelper::getInstance().isMaster()) {
-            MPIHelper::getInstance().setSharedCounter(0);
-        }        
-
-        #ifdef _IQTREE_MPI
-            MPI_Barrier(MPI_COMM_WORLD);
-        #endif
-        
-        #ifdef _OPENMP
-        #pragma omp parallel if (tree->num_threads > 1)
-        #endif
-        {
-            while (true) {
-                int i;
-                #pragma omp critical
-                i = MPIHelper::getInstance().incrementSharedCounter();
-            
-                if (i >= ntrees) {
-                    break;
-                }
-                i = tree->part_order[i];
-                ModelSubst *part_model = tree->at(i)->getModel();
-                if (part_model->getName() != model->getName())
-                    continue;
-                bool fixed = part_model->fixParameters(false);
-                results[i] = part_model->targetFunk(x);
-                part_model->fixParameters(fixed);    
-            }
-        }
-
-        #ifdef _IQTREE_MPI
-            MPI_Barrier(MPI_COMM_WORLD);
-            results = MPIHelper::getInstance().sumProcs(results);
-        #endif
-            for (auto e : results)
-             res += e;
-
-    } else if (Params::getInstance().pqmaker) {
+    if (Params::getInstance().pqmaker || Params::getInstance().cpqmaker) {
         /*----------------------------------- Run pQMaker here ----------------------------------*/
         DoubleVector results(tree->size());
-
+        DoubleVector timeCost(tree->size());
         #ifdef _OPENMP
         #pragma omp parallel for reduction(+ : res) schedule(dynamic) if (tree->num_threads > 1)
         #endif
@@ -348,12 +308,15 @@ double PartitionModel::targetFunk(double x[]) {
             for (int j = 0; j < tree->size(); j++) {
                 int i = tree->part_order[j];
         #endif
+                double begin = getCPUTime();
                 ModelSubst *part_model = tree->at(i)->getModel();
                 if (part_model->getName() != model->getName())
                     continue;
                 bool fixed = part_model->fixParameters(false);
                 results[i] = part_model->targetFunk(x);
                 part_model->fixParameters(fixed);
+                double end = getCPUTime();
+                timeCost[i] = end - begin;
             }
 
         #ifdef _IQTREE_MPI
@@ -361,6 +324,11 @@ double PartitionModel::targetFunk(double x[]) {
         #endif
             for (auto e : results)
              res += e;
+        if (Params::getInstance().cpqmaker) {
+            for (int i = 0; i < tree->size(); i++) {
+                tree->cost[i] += timeCost[i];
+            }
+        }
     } else {
         /*----------------------------------- Run QMaker here ----------------------------------*/
 
@@ -485,8 +453,25 @@ double PartitionModel::optimizeLinkedModel(bool write_info, double gradient_epsi
     if (write_info) {
         cout << "Linked-model log-likelihood: " << score << endl;
     }
-
+    
     return score;
+}
+
+void PartitionModel::dfpmin(double p[], int n, double lower[], double upper[]
+                          , double gtol, int *iter, double *fret, double *hessian) {
+    Optimization::dfpmin(p, n, lower, upper, gtol, iter, fret, hessian);
+    if (Params::getInstance().cpqmaker) {
+        PhyloSuperTree *tree = (PhyloSuperTree*)site_rate->getTree();
+        DoubleVector proc_cost(tree->size());
+        for (int i = 0; i < tree->size(); i++)
+            proc_cost[i] = tree->cost[i];
+        proc_cost = MPIHelper::getInstance().sumProcs(proc_cost);
+        for (int i = 0; i < tree->size(); i++)
+            tree->cost[i] = proc_cost[i];
+        tree->reComputeProcPartitionOrder(tree->cost);
+        for (int i = 0; i < tree->size(); i++)
+            tree->cost[i] = 0;
+    }
 }
 
 double PartitionModel::optimizeLinkedModels(bool write_info, double gradient_epsilon) {

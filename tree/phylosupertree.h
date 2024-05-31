@@ -491,10 +491,11 @@ public:
 
     int totalNNIs, evalNNIs;
 
-private:
-#ifdef _IQTREE_MPI
+    double *cost;
+
     void computeProcPartitionOrder(double *);
-#endif
+
+    void reComputeProcPartitionOrder(double *);
 };
 
 #endif

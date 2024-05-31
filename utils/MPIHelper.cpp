@@ -36,18 +36,6 @@ void MPIHelper::init(int argc, char *argv[]) {
 
 void MPIHelper::initSharedMemory() {
 #ifdef _IQTREE_MPI
-    if (Params::getInstance().cpqmaker) {
-        if (getNumProcesses() > 1) {
-            MPI_Win_allocate(sizeof(int), sizeof(int), MPI_INFO_NULL, MPI_COMM_WORLD, &shared_counter, &shmwin);
-            if (isMaster()) {
-                shared_counter[0] = 0;
-            }
-        } else {
-            shared_counter = new int[1];
-            shared_counter[0] = 0;
-        }
-    }
-    
     if (Params::getInstance().split) {
         if (getNumProcesses() > 1) {
             MPI_Win_allocate(sizeof(int) * 3, sizeof(int), MPI_INFO_NULL, MPI_COMM_WORLD, &shared_counter, &shmwin);
@@ -148,7 +136,7 @@ int MPIHelper::getSharedCounter(int id) {
 
 void MPIHelper::finalize() {
 #ifdef _IQTREE_MPI
-    if (Params::getInstance().cpqmaker || Params::getInstance().split)
+    if (Params::getInstance().split)
         if (getNumProcesses() > 1)
             MPI_Win_free(&shmwin);
     MPI_Finalize();

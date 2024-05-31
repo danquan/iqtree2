@@ -179,6 +179,9 @@ protected:
      */
     virtual bool getVariables(double *variables);
 
+    void dfpmin(double p[], int n, double lower[], double upper[]
+                          , double gtol, int *iter, double *fret, double *hessian);
+
 private:
 #ifdef _IQTREE_MPI
     /**

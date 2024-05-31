@@ -226,8 +226,6 @@ private:
 
 	double dbrent(double ax, double bx, double cx, double tol, double *xmin);
 
-	void dfpmin(double p[], int n, double lower[], double upper[], double gtol, int *iter, double *fret, double *hessian);
-
 	void lnsrch(int n, double xold[], double fold, double g[], double p[], double x[],
 		double *f, double stpmax, int *check, double lower[], double upper[]);
 
@@ -236,7 +234,9 @@ private:
 		double factr, double pgtol,
 		int *fncount, int *grcount, int maxit, char *msg,
 		int trace, int nREPORT);
-    
+protected:
+	virtual void dfpmin(double p[], int n, double lower[], double upper[], double gtol, int *iter, double *fret, double *hessian);
+
 };
 
 
