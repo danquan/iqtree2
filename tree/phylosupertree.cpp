@@ -741,10 +741,6 @@ void PhyloSuperTree::computeProcPartitionOrder(double *cost)
 
 void PhyloSuperTree::reComputeProcPartitionOrder(double *cost)
 {
-	for (int i = 0; i < size(); ++i) {
-		cout << cost[i] << ' ';
-	}
-	cout << '\n';
 	int ntrees = size();
 	int nprocs = MPIHelper::getInstance().getNumProcesses();
 	int *id = new int[ntrees];
@@ -777,12 +773,6 @@ void PhyloSuperTree::reComputeProcPartitionOrder(double *cost)
 		}
 	}
 	proc_part_order = MPIHelper::getInstance().getProcVector(proc_parts);
-	printf("Process %d received: ", MPIHelper::getInstance().getProcessID());
-	for (int i = 0; i < proc_part_order.size(); i++)
-	{
-		printf("%d ", proc_part_order[i]);
-	}
-	printf("\n");
 }
 
 double PhyloSuperTree::computeLikelihood(double *pattern_lh, bool save_log_value) {

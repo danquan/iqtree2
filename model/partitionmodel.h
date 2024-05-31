@@ -188,6 +188,8 @@ private:
         Synchronize tree branch lengths optimized in multiple processes
      */
     void syncBranchLengths();
+
+    int cntLoop = 0;
 #endif
 };
 

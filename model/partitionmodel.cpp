@@ -329,6 +329,22 @@ double PartitionModel::targetFunk(double x[]) {
                 tree->cost[i] += timeCost[i];
             }
         }
+        if (Params::getInstance().cpqmaker) {
+            ++cntLoop;
+            if (cntLoop == 100) {
+                PhyloSuperTree *tree = (PhyloSuperTree*)site_rate->getTree();
+                DoubleVector proc_cost(tree->size());
+                for (int i = 0; i < tree->size(); i++)
+                    proc_cost[i] = tree->cost[i];
+                proc_cost = MPIHelper::getInstance().sumProcs(proc_cost);
+                for (int i = 0; i < tree->size(); i++)
+                    tree->cost[i] = proc_cost[i];
+                tree->reComputeProcPartitionOrder(tree->cost);
+                for (int i = 0; i < tree->size(); i++)
+                    tree->cost[i] = 0;
+                cntLoop = 0;
+            }
+        }
     } else {
         /*----------------------------------- Run QMaker here ----------------------------------*/
 
@@ -471,6 +487,7 @@ void PartitionModel::dfpmin(double p[], int n, double lower[], double upper[]
         tree->reComputeProcPartitionOrder(tree->cost);
         for (int i = 0; i < tree->size(); i++)
             tree->cost[i] = 0;
+        cntLoop = 0;
     }
 }
 
