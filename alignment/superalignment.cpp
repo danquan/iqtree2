@@ -900,29 +900,16 @@ void SuperAlignment::splitPartitions(Params &params) {
     const int BOUND_LEN = 50;
 
     sort(partitions.begin(), partitions.end(), [](Alignment *a, Alignment *b) {
-        return a->getNPattern() * a->getNSeq() < b->getNPattern() * b->getNSeq();
+        return a->getNPattern() * a->getNSeq() > b->getNPattern() * b->getNSeq();
     });
     auto computePartitionCost = [&]() {
-        vector<double> pref(partitions.size() + 1);
-        vector<double> suff(partitions.size() + 1);
-        pref[0] = 0;
-        suff[partitions.size()] = 0;
-        for (int i = 1; i <= partitions.size(); ++i) {
-            pref[i] = pref[i-1] + partitions[i-1]->getNPattern() * partitions[i-1]->getNSeq();
-        }
-        for (int i = partitions.size() - 1; i >= 0; --i) {
-            suff[i] = suff[i+1] + partitions[i]->getNPattern() * partitions[i]->getNSeq();
-        }
-        for (int i = partitions.size(); i >= 1; --i) {
-            if (suff[i] / (partitions.size() - i) <= 2 * pref[i] / i) {
-                return pref[i] / i * 2;
-            }
-        }
-        return pref[partitions.size()] / partitions.size() * 2;
+        // only split the top 5% of the partitions
+        int numPartitions = partitions.size();
+        int partitionID = numPartitions / 20;
+        return partitions[partitionID]->getNPattern() * partitions[partitionID]->getNSeq();
     };
     
     double partitionCost = computePartitionCost();
-    reverse(partitions.begin(), partitions.end());
 
     const std::string splitDir = string(params.out_prefix) + "/split/";
     const std::string prefixPath = string(params.out_prefix) + "/tmp/";
@@ -1029,7 +1016,6 @@ void SuperAlignment::splitPartitions(Params &params) {
             "-t", &treefile[0],
             "--sitelh", 
             "--safe", 
-            "--fast",
             "-T", &std::to_string(params.num_threads)[0],
             "-keep-ident",
             "--redo"
