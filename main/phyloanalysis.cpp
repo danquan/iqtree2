@@ -4491,14 +4491,14 @@ void runPhyloAnalysis(Params &params, Checkpoint *checkpoint, IQTree *&tree, Ali
         } else {
             if (params.non_mpi_treesearch) {
                 SuperAlignment* aln = (SuperAlignment*) alignment;
-                vector<pair<int, int> > costAln;
+                vector<pair<long long, int> > costAln;
                 for (int i = 0; i < (int) aln->partitions.size(); i++) {
-                    costAln.push_back(make_pair(aln->partitions[i]->getNPattern() * aln->partitions[i]->getNSeq(), i));
+                    costAln.push_back(make_pair(1ll * aln->partitions[i]->getNPattern() * aln->partitions[i]->getNSeq() * aln->partitions[i]->getNSeq(), i));
                 }
 
                 sort(costAln.begin(), costAln.end(), greater<pair<int, int> >());
 
-                priority_queue<pair<int, int>, vector<pair<int, int> >, greater<pair<int, int> > > pq;
+                priority_queue<pair<long long, int>, vector<pair<long long, int> >, greater<pair<long long, int> > > pq;
                 for (int i = 0; i < MPIHelper::getInstance().getNumProcesses(); i++) {
                     pq.push(make_pair(0, -i));
                 }
@@ -4509,18 +4509,10 @@ void runPhyloAnalysis(Params &params, Checkpoint *checkpoint, IQTree *&tree, Ali
                 }
 
                 for (int i = 0; i < (int) costAln.size(); i++) {
-                    int cost = pq.top().first; int idx = -pq.top().second; pq.pop();
+                    long long cost = pq.top().first; int idx = -pq.top().second; pq.pop();
                     assigned[idx].push_back(costAln[i].second);
                     pq.push(make_pair(cost + costAln[i].first, -idx));
                 }
-
-                // int sz = ((SuperAlignment*) alignment)->partitions.size();
-                // int block_sz = sz / MPIHelper::getInstance().getNumProcesses();
-                // int startID = MPIHelper::getInstance().getProcessID() * block_sz;
-                // int endID = startID + block_sz;
-                // if (MPIHelper::getInstance().getProcessID() == MPIHelper::getInstance().getNumProcesses() - 1) {
-                //     endID = sz;
-                // }
 
                 IntVector seqIDs = IntVector();
                 if (MPIHelper::getInstance().isMaster()) {
