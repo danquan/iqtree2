@@ -681,7 +681,7 @@ string computeFastMLTree(Params &params, Alignment *aln,
             cout << "Time for fast ML tree search: " << getRealTime() - start_time << " seconds" << endl;
             cout << endl;
         } else {
-            MPI_Barrier(MPI_COMM_WORLD);
+            // MPI_Barrier(MPI_COMM_WORLD);
             
             double runtime = getRealTime() - start_time;
             double summary_time = runtime;
@@ -905,9 +905,6 @@ void runModelFinder(Params &params, IQTree &iqtree, ModelCheckpoint &model_info)
     if (iqtree.isSuperTree()) {
         // partition model selection
         PhyloSuperTree *stree = (PhyloSuperTree*)&iqtree;
-        for (auto it = stree->begin(); it != stree->end(); it++) {
-            printf("Process %d, Partition %s\n", MPIHelper::getInstance().getProcessID(), (*it)->aln->name.c_str());
-        }
         string res_models = "";
         testPartitionModel(params, stree, model_info, models_block, params.num_threads);
         stree->mapTrees();
@@ -915,7 +912,6 @@ void runModelFinder(Params &params, IQTree &iqtree, ModelCheckpoint &model_info)
             if (it != stree->begin()) res_models += ",";
             res_models += (*it)->aln->model_name;
         }
-        printf("Process %d: %s\n", MPIHelper::getInstance().getProcessID(), res_models.c_str());
         iqtree.aln->model_name = res_models;
     } else {
         // single model selection
@@ -949,26 +945,26 @@ void runModelFinder(Params &params, IQTree &iqtree, ModelCheckpoint &model_info)
     //     model_info_file << pair.first << " = " << pair.second << endl;
     // }
 
-    ModelCheckpoint summary_model = model_info;
-    if (MPIHelper::getInstance().isWorker()) {
-        MPIHelper::getInstance().sendCheckpoint(&summary_model, 0);
-    } else {
-        for (int i = 1; i < MPIHelper::getInstance().getNumProcesses(); i++) {
-            ModelCheckpoint worker_model;
-            MPIHelper::getInstance().recvCheckpoint(&worker_model, i);
+    // ModelCheckpoint summary_model = model_info;
+    // if (MPIHelper::getInstance().isWorker()) {
+    //     MPIHelper::getInstance().sendCheckpoint(&summary_model, 0);
+    // } else {
+    //     for (int i = 1; i < MPIHelper::getInstance().getNumProcesses(); i++) {
+    //         ModelCheckpoint worker_model;
+    //         MPIHelper::getInstance().recvCheckpoint(&worker_model, i);
             
-            for (const auto& pair : worker_model) {
-                summary_model.put(pair.first, pair.second);
-            }
-        }
-    }
+    //         for (const auto& pair : worker_model) {
+    //             summary_model.put(pair.first, pair.second);
+    //         }
+    //     }
+    // }
     
-    // force to dump all checkpointing information
-    if (MPIHelper::getInstance().getProcessID() == 0) {
-        ofstream out((string)params.out_prefix + ".model");
-        summary_model.dump(out);
-        // model_info = summary_model;
-    }
+    // // force to dump all checkpointing information
+    // if (MPIHelper::getInstance().getProcessID() == 0) {
+    //     ofstream out((string)params.out_prefix + ".model");
+    //     summary_model.dump(out);
+    //     // model_info = summary_model;
+    // }
     
     // transfer models parameters
     transferModelFinderParameters(&iqtree, orig_checkpoint);
@@ -979,13 +975,13 @@ void runModelFinder(Params &params, IQTree &iqtree, ModelCheckpoint &model_info)
     cpu_time = getCPUTime() - cpu_time;
     real_time = getRealTime() - real_time;
     cout << endl;
-    cout << "All model information printed to " << model_info.getFileName() << endl;
+    // cout << "All model information printed to " << model_info.getFileName() << endl;
     
     if (!params.non_mpi_treesearch) {
         cout << "CPU time for ModelFinder: " << cpu_time << " seconds (" << convert_time(cpu_time) << ")" << endl;
         cout << "Wall-clock time for ModelFinder: " << real_time << " seconds (" << convert_time(real_time) << ")" << endl;
     } else {
-        MPI_Barrier(MPI_COMM_WORLD);
+        // MPI_Barrier(MPI_COMM_WORLD);
         
         double cpu_time_summary = cpu_time;
         double real_time_summary = real_time;
@@ -2183,13 +2179,8 @@ void testPartitionModel(Params &params, PhyloSuperTree* in_tree, ModelCheckpoint
     pre_inf_score = inf_score;
 
 	if (!test_merge) {
-        if (!params.non_mpi_treesearch) {
-            super_aln->printBestPartition((string(params.out_prefix) + ".best_scheme.nex").c_str());
-            super_aln->printBestPartitionRaxml((string(params.out_prefix) + ".best_scheme").c_str());
-        } else {
-            super_aln->printBestPartitionMPI((string(params.out_prefix) + ".best_scheme.nex").c_str());
-            super_aln->printBestPartitionRaxmlMPI((string(params.out_prefix) + ".best_scheme").c_str());
-        }
+        super_aln->printBestPartition((string(params.out_prefix) + ".best_scheme.nex").c_str());
+        super_aln->printBestPartitionRaxml((string(params.out_prefix) + ".best_scheme").c_str());
         model_info.dump();
 		return;
 	}

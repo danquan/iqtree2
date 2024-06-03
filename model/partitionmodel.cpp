@@ -558,7 +558,6 @@ double PartitionModel::optimizeParameters(int fixed_len, bool write_info, double
 
                 if (part >= ntrees) continue;
                 tree->proc_part_order.push_back(part);
-                printf("Process %d: Partition %d\n", MPIHelper::getInstance().getProcessID(), part);
                 
                 double score;
                 
@@ -667,6 +666,7 @@ double PartitionModel::optimizeParameters(int fixed_len, bool write_info, double
 
         } else {
             /*----------------------------------- Run QMaker here ----------------------------------*/
+            stringstream ss;
             #ifdef _OPENMP
             #pragma omp parallel for reduction(+: tree_lh) schedule(dynamic) if(tree->num_threads > 1)
             #endif
@@ -687,10 +687,30 @@ double PartitionModel::optimizeParameters(int fixed_len, bool write_info, double
                 #pragma omp critical
                 #endif
                 {
-                    cout << "Partition " << tree->at(part)->aln->name
+                    ss << "Partition " << tree->at(part)->aln->name
                         << " / Model: " << tree->at(part)->getModelName()
                         << " / df: " << tree->at(part)->getModelFactory()->getNParameters(fixed_len)
                     << " / LogL: " << score << endl;
+                }
+            }
+
+            if (!Params::getInstance().non_mpi_treesearch) {
+                cout << ss.str();
+            } else {
+                int LOG_TAG = 20;
+
+                if (MPIHelper::getInstance().isWorker()) {
+                    string str = ss.str();
+                    MPIHelper::getInstance().sendString(str, 0, LOG_TAG);
+                } else {
+                    string summary = ss.str();
+                    for (int i = 1; i < MPIHelper::getInstance().getNumProcesses(); i++) {
+                        string str;
+                        MPIHelper::getInstance().recvString(str, i, LOG_TAG);
+                        summary += str;
+                    }
+
+                    cout << summary;
                 }
             }
             //return ModelFactory::optimizeParameters(fixed_len, write_info);
@@ -722,11 +742,21 @@ double PartitionModel::optimizeParameters(int fixed_len, bool write_info, double
         if (!Params::getInstance().non_mpi_treesearch)
 		    cout << "Optimal log-likelihood: " << tree_lh << endl;
         else {
-            MPI_Barrier(MPI_COMM_WORLD);
+            // MPI_Barrier(MPI_COMM_WORLD);
 
-            double summary_tree_lh = tree_lh;
-            MPI_Allreduce(&tree_lh, &summary_tree_lh, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-            cout << "Optimal log-likelihood: " << summary_tree_lh << endl;
+            int LOG_TAG = 20;
+            if (MPIHelper::getInstance().isWorker()) {
+                MPI_Send(&tree_lh, 1, MPI_DOUBLE, 0, LOG_TAG, MPI_COMM_WORLD);
+            } else {
+                double summary_tree_lh = tree_lh;
+                for (int i = 1; i < MPIHelper::getInstance().getNumProcesses(); i++) {
+                    double lh;
+                    MPI_Recv(&lh, 1, MPI_DOUBLE, i, LOG_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                    summary_tree_lh += lh;
+                }
+
+                cout << "Optimal log-likelihood: " << summary_tree_lh << endl;
+            }
         }
     }
     

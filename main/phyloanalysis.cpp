@@ -183,24 +183,17 @@ void reportModelSelection(ofstream &out, Params &params, ModelCheckpoint *model_
     PhyloSuperTree *stree = (tree->isSuperTree()) ? ((PhyloSuperTree*)tree) : NULL;
     if (tree->isSuperTree()) {
         SuperAlignment *saln = (SuperAlignment*)stree->aln;
+        
+        stringstream ss;
+        for (int part = 0; part != stree->size(); part++) {
+            if (part != 0)
+                ss << ",";
+            ss << saln->partitions[part]->model_name << ":" << saln->partitions[part]->name;
+        }
 
         if (!params.non_mpi_treesearch) {
-            if (MPIHelper::getInstance().isMaster()) {
-                for (int part = 0; part != stree->size(); part++) {
-                    if (part != 0)
-                        out << ",";
-                    out << saln->partitions[part]->model_name << ":" << saln->partitions[part]->name;
-                }
-            }
+            out << ss.str();
         } else {
-            MPI_Barrier(MPI_COMM_WORLD);
-            stringstream ss;
-            for (int part = 0; part != stree->size(); part++) {
-                if (part != 0)
-                    ss << ",";
-                ss << saln->partitions[part]->model_name << ":" << saln->partitions[part]->name;
-            }
-
             int LOG_TAG = 20;
             if (MPIHelper::getInstance().isWorker()) {
                 string str = ss.str();
@@ -216,6 +209,7 @@ void reportModelSelection(ofstream &out, Params &params, ModelCheckpoint *model_
                 out << summary;
             }
         }
+        
 //        string set_name = "";
 //        for (it = model_info.begin(); it != model_info.end(); it++) {
 //            if (it->set_name != set_name) {
@@ -256,86 +250,66 @@ void reportModelSelection(ofstream &out, Params &params, ModelCheckpoint *model_
     CandidateModelSet models;
     model_info->getOrderedModels(tree, models);
     
+    stringstream ss;
+    for (auto it = models.begin(); it != models.end(); it++) {
+        if (tree->isSuperTree()) {
+            ss.width(4);
+            ss << right << setid << "  ";
+            setid++;
+        }
+        ss.width(15);
+        ss << left << it->getName() << " ";
+        ss.width(11);
+        ss << right << it->logl << " ";
+        ss.width(11);
+        ss    << it->AIC_score << ((it->AIC_conf) ? " + " : " - ");
+        ss.unsetf(ios::fixed);
+        ss.width(8);
+        ss << it->AIC_weight << " ";
+        ss.setf(ios::fixed);
+        ss.width(11);
+        ss << it->AICc_score << ((it->AICc_conf) ? " + " : " - ");
+        ss.unsetf(ios::fixed);
+        ss.width(8);
+        ss << it->AICc_weight << " ";
+        ss.setf(ios::fixed);
+        ss.width(11);
+        ss << it->BIC_score  << ((it->BIC_conf) ? " + " : " - ");
+        ss.unsetf(ios::fixed);
+        ss.width(8);
+        ss << it->BIC_weight;
+        ss.setf(ios::fixed);
+        ss << endl;
+    }
+        
     if (!params.non_mpi_treesearch) {
-        if (MPIHelper::getInstance().isMaster()) {
-            for (auto it = models.begin(); it != models.end(); it++) {
-                if (tree->isSuperTree()) {
-                    out.width(4);
-                    out << right << setid << "  ";
-                    setid++;
-                }
-                out.width(15);
-                out << left << it->getName() << " ";
-                out.width(11);
-                out << right << it->logl << " ";
-                out.width(11);
-                out    << it->AIC_score << ((it->AIC_conf) ? " + " : " - ");
-                out.unsetf(ios::fixed);
-                out.width(8);
-                out << it->AIC_weight << " ";
-                out.setf(ios::fixed);
-                out.width(11);
-                out << it->AICc_score << ((it->AICc_conf) ? " + " : " - ");
-                out.unsetf(ios::fixed);
-                out.width(8);
-                out << it->AICc_weight << " ";
-                out.setf(ios::fixed);
-                out.width(11);
-                out << it->BIC_score  << ((it->BIC_conf) ? " + " : " - ");
-                out.unsetf(ios::fixed);
-                out.width(8);
-                out << it->BIC_weight;
-                out.setf(ios::fixed);
-                out << endl;
-            }
-        }
+        out << ss.str();
     } else {
-        MPI_Barrier(MPI_COMM_WORLD);
-        stringstream ss;
-        for (auto it = models.begin(); it != models.end(); it++) {
-            if (tree->isSuperTree()) {
-                ss.width(4);
-                ss << right << setid << "  ";
-                setid++;
-            }
-            ss.width(15);
-            ss << left << it->getName() << " ";
-            ss.width(11);
-            ss << right << it->logl << " ";
-            ss.width(11);
-            ss    << it->AIC_score << ((it->AIC_conf) ? " + " : " - ");
-            ss.unsetf(ios::fixed);
-            ss.width(8);
-            ss << it->AIC_weight << " ";
-            ss.setf(ios::fixed);
-            ss.width(11);
-            ss << it->AICc_score << ((it->AICc_conf) ? " + " : " - ");
-            ss.unsetf(ios::fixed);
-            ss.width(8);
-            ss << it->AICc_weight << " ";
-            ss.setf(ios::fixed);
-            ss.width(11);
-            ss << it->BIC_score  << ((it->BIC_conf) ? " + " : " - ");
-            ss.unsetf(ios::fixed);
-            ss.width(8);
-            ss << it->BIC_weight;
-            ss.setf(ios::fixed);
-            ss << endl;
-        }
-
         int LOG_TAG = 20;
         if (MPIHelper::getInstance().isWorker()) {
             string str = ss.str();
             MPIHelper::getInstance().sendString(str, 0, LOG_TAG);
         } else {
-            string summary = ss.str();
+            stringstream sss;
+            sss << ss.str();
             for (int i = 1; i < MPIHelper::getInstance().getNumProcesses(); i++) {
                 string str;
                 MPIHelper::getInstance().recvString(str, i, LOG_TAG);
-                summary += str;
+                sss << str;
             }
 
-            out << summary;
+            int numID = 0;
+            while (sss.eof() == false) {
+                int id;
+                sss >> id;
+
+                string line;
+                getline(sss, line);
+                if (line.empty()) break;
+
+                ++numID;
+                out << "\t" << numID << line << endl;
+            }
         }
     }
     out.precision(4);
@@ -703,6 +677,8 @@ void reportTree(ofstream &out, Params &params, PhyloTree &tree, double tree_lh, 
     double AIC_score, AICc_score, BIC_score;
     computeInformationScores(tree_lh, df, ssize, AIC_score, AICc_score, BIC_score);
 
+    // MPI_Barrier(MPI_COMM_WORLD);
+
     if (!params.non_mpi_treesearch) {
         out << "Log-likelihood of the tree: " << fixed << tree_lh;
     } else {
@@ -773,15 +749,31 @@ void reportTree(ofstream &out, Params &params, PhyloTree &tree, double tree_lh, 
     double summary_AIC_score = AIC_score;
     double summary_AICc_score = AICc_score;
     double summary_BIC_score = BIC_score;
-    MPI_Allgather(&AIC_score, 1, MPI_DOUBLE, &summary_AIC_score, 1, MPI_DOUBLE, MPI_COMM_WORLD);
-    MPI_Allgather(&AICc_score, 1, MPI_DOUBLE, &summary_AICc_score, 1, MPI_DOUBLE, MPI_COMM_WORLD);
-    MPI_Allgather(&BIC_score, 1, MPI_DOUBLE, &summary_BIC_score, 1, MPI_DOUBLE, MPI_COMM_WORLD);
 
     if (!params.non_mpi_treesearch) {
         out    << "Akaike information criterion (AIC) score: " << AIC_score << endl;
         out << "Corrected Akaike information criterion (AICc) score: " << AICc_score << endl;
         out << "Bayesian information criterion (BIC) score: " << BIC_score << endl;
     } else {
+        if (MPIHelper::getInstance().isWorker()) {
+            MPI_Send(&AIC_score, 1, MPI_DOUBLE, 0, 20, MPI_COMM_WORLD);
+            MPI_Send(&AICc_score, 1, MPI_DOUBLE, 0, 21, MPI_COMM_WORLD);
+            MPI_Send(&BIC_score, 1, MPI_DOUBLE, 0, 22, MPI_COMM_WORLD);
+        } else {
+            double summary_AIC_score = AIC_score;
+            double summary_AICc_score = AICc_score;
+            double summary_BIC_score = BIC_score;
+            for (int i = 1; i < MPIHelper::getInstance().getNumProcesses(); i++) {
+                double AIC_score, AICc_score, BIC_score;
+                MPI_Recv(&AIC_score, 1, MPI_DOUBLE, i, 20, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                MPI_Recv(&AICc_score, 1, MPI_DOUBLE, i, 21, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                MPI_Recv(&BIC_score, 1, MPI_DOUBLE, i, 22, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                summary_AIC_score += AIC_score;
+                summary_AICc_score += AICc_score;
+                summary_BIC_score += BIC_score;
+            }
+        }
+
         out    << "Akaike information criterion (AIC) score: " << summary_AIC_score << endl;
         out << "Corrected Akaike information criterion (AICc) score: " << summary_AICc_score << endl;
         out << "Bayesian information criterion (BIC) score: " << summary_BIC_score << endl;
@@ -1209,41 +1201,46 @@ void reportSubstitutionProcess(ostream &out, Params &params, IQTree &tree)
             out << "  ID  Model           Speed  Parameters" << endl;
         //out << "-------------------------------------" << endl;
 
+        stringstream ss;
+        for (it = stree->begin(), part = 0; it != stree->end(); it++, part++) {
+            ss.width(4);
+            ss << right << (part+1) << "  ";
+            ss.width(14);
+            if(params.partition_type == BRLEN_OPTIMIZE || params.partition_type == TOPO_UNLINKED)
+                ss << left << (*it)->getModelName() << " " << (*it)->treeLength() << "  " << (*it)->getModelNameParams(show_full_params) << endl;
+            else
+                ss << left << (*it)->getModelName() << " " << stree->part_info[part].part_rate  << "  " << (*it)->getModelNameParams(show_full_params) << endl;
+        }
+        
         if (!params.non_mpi_treesearch) {
-            for (it = stree->begin(), part = 0; it != stree->end(); it++, part++) {
-                out.width(4);
-                out << right << (part+1) << "  ";
-                out.width(14);
-                if(params.partition_type == BRLEN_OPTIMIZE || params.partition_type == TOPO_UNLINKED)
-                    out << left << (*it)->getModelName() << " " << (*it)->treeLength() << "  " << (*it)->getModelNameParams(show_full_params) << endl;
-                else
-                    out << left << (*it)->getModelName() << " " << stree->part_info[part].part_rate  << "  " << (*it)->getModelNameParams(show_full_params) << endl;
-            }
+            out << ss.str();
         } else {
-            stringstream ss;
-            for (it = stree->begin(), part = 0; it != stree->end(); it++, part++) {
-                ss.width(4);
-                ss << right << (part+1) << "  ";
-                ss.width(14);
-                if(params.partition_type == BRLEN_OPTIMIZE || params.partition_type == TOPO_UNLINKED)
-                    ss << left << (*it)->getModelName() << " " << (*it)->treeLength() << "  " << (*it)->getModelNameParams(show_full_params) << endl;
-                else
-                    ss << left << (*it)->getModelName() << " " << stree->part_info[part].part_rate  << "  " << (*it)->getModelNameParams(show_full_params) << endl;
-            }
-            
             int LOG_TAG = 20;
             if (MPIHelper::getInstance().isWorker()) {
                 string str = ss.str();
                 MPIHelper::getInstance().sendString(str, 0, LOG_TAG);
             } else {
-                string summary = ss.str();
+                stringstream sss;
+                sss << ss.str();
                 for (int i = 1; i < MPIHelper::getInstance().getNumProcesses(); i++) {
                     string str;
                     MPIHelper::getInstance().recvString(str, i, LOG_TAG);
-                    summary += str;
+                    sss << str;
                 }
 
-                out << summary;
+                int numID = 0;
+                while (sss.eof() == false) {
+                    int ID; sss >> ID;
+                    
+                    string line;
+                    getline(sss, line);
+                    if (line.empty()) {
+                        continue;
+                    }
+
+                    numID++;
+                    out << "\t" << numID <<"\t" << line << endl;
+                }
             }
         }
         out << endl;
@@ -1271,9 +1268,9 @@ void reportSubstitutionProcess(ostream &out, Params &params, IQTree &tree)
 }
 
 void reportPhyloAnalysis(Params &params, IQTree &tree, ModelCheckpoint &model_info) {
-    if (!MPIHelper::getInstance().isMaster()) {
-        return;
-    }
+    // if (!MPIHelper::getInstance().isMaster()) {
+    //     return;
+    // }
     if (params.suppress_output_flags & OUT_IQTREE) {
         printOutfilesInfo(params, tree);
         return;
@@ -1300,8 +1297,10 @@ void reportPhyloAnalysis(Params &params, IQTree &tree, ModelCheckpoint &model_in
     outfile += ".iqtree";
     try {
         ofstream out;
-        out.exceptions(ios::failbit | ios::badbit);
-        out.open(outfile.c_str());
+        if (MPIHelper::getInstance().isMaster()) {
+            out.exceptions(ios::failbit | ios::badbit);
+            out.open(outfile.c_str());
+        }
         out << "IQ-TREE " << iqtree_VERSION_MAJOR << "." << iqtree_VERSION_MINOR
             << iqtree_VERSION_PATCH << " COVID-edition built " << __DATE__ << endl
                 << endl;
@@ -1339,10 +1338,13 @@ void reportPhyloAnalysis(Params &params, IQTree &tree, ModelCheckpoint &model_in
                 << endl;
         if (tree.isSuperTree()) {
       // TODO DS: Changes may be needed here for PoMo.
-            out << "Input data: " << tree.aln->getNSeq()+tree.removed_seqs.size() << " taxa with "
-                    << tree.aln->getNSite() << " partitions and "
-                    << tree.getAlnNSite() << " total sites ("
-                    << ((SuperAlignment*)tree.aln)->computeMissingData()*100 << "% missing data)" << endl << endl;
+      
+            // out << "Input data: " << tree.aln->getNSeq()+tree.removed_seqs.size() << " taxa with "
+            //         << tree.aln->getNSite() << " partitions and "
+            //         << tree.getAlnNSite() << " total sites ("
+            //         << ((SuperAlignment*)tree.aln)->computeMissingData()*100 << "% missing data)" << endl << endl;
+
+            out << "Input data: " << endl;
 
             PhyloSuperTree *stree = (PhyloSuperTree*) &tree;
             int namelen = stree->getMaxPartNameLength();
@@ -1350,31 +1352,65 @@ void reportPhyloAnalysis(Params &params, IQTree &tree, ModelCheckpoint &model_in
             out.width(4);
             out << left << "  ID" << "\tType\tSeq\tSite\tUnique\tInfor\tInvar\tConst\tName" << endl;
             //out << string(namelen+54, '-') << endl;
+
+            stringstream ss;
             part = 0;
             for (PhyloSuperTree::iterator it = stree->begin(); it != stree->end(); it++, part++) {
                 //out << "FOR PARTITION " << stree->part_info[part].name << ":" << endl << endl;
                 //reportAlignment(out, *((*it)->aln));
-                out.width(4);
-                out << right << part+1;
-                out << "\t";
+                ss.width(4);
+                ss << right << part+1;
+                ss << "\t";
                 switch ((*it)->aln->seq_type) {
-                case SEQ_BINARY: out << "BIN"; break;
-                case SEQ_CODON: out << "CODON"; break;
-                case SEQ_DNA: out << "DNA"; break;
-                case SEQ_MORPH: out << "MORPH"; break;
-                case SEQ_MULTISTATE: out << "MULTI"; break;
-                case SEQ_PROTEIN: out << "AA"; break;
-                case SEQ_POMO: out << "POMO"; break;
-                case SEQ_UNKNOWN: out << "???"; break;
+                case SEQ_BINARY: ss << "BIN"; break;
+                case SEQ_CODON: ss << "CODON"; break;
+                case SEQ_DNA: ss << "DNA"; break;
+                case SEQ_MORPH: ss << "MORPH"; break;
+                case SEQ_MULTISTATE: ss << "MULTI"; break;
+                case SEQ_PROTEIN: ss << "AA"; break;
+                case SEQ_POMO: ss << "POMO"; break;
+                case SEQ_UNKNOWN: ss << "???"; break;
                 }
-                out << "\t" << (*it)->aln->getNSeq() << "\t" << (*it)->aln->getNSite()
+                ss << "\t" << (*it)->aln->getNSeq() << "\t" << (*it)->aln->getNSite()
                     << "\t" << (*it)->aln->getNPattern() << "\t" << (*it)->aln->num_informative_sites
                     << "\t" << (*it)->getAlnNSite() - (*it)->aln->num_variant_sites
                     << "\t" << round((*it)->aln->frac_const_sites*(*it)->getAlnNSite())
                     << "\t";
-                out << left << (*it)->aln->name;
-                out << endl;
+                ss << left << (*it)->aln->name;
+                ss << endl;
             }
+
+            if (!params.non_mpi_treesearch) {
+                out << ss.str();
+            } else {
+                int LOG_TAG = 20;
+                if (MPIHelper::getInstance().isWorker()) {
+                    string str = ss.str();
+                    MPIHelper::getInstance().sendString(str, 0, LOG_TAG);
+                } else {
+                    stringstream sss;
+                    sss << ss.str();
+                    for (int i = 1; i < MPIHelper::getInstance().getNumProcesses(); i++) {
+                        string str;
+                        MPIHelper::getInstance().recvString(str, i, LOG_TAG);
+                        sss << str;
+                    }
+
+                    int numID = 0;
+                    while (sss.eof() == false) {
+                        int id; sss >> id;
+
+                        string line;
+                        getline(sss, line);
+
+                        if (line == "") break;
+
+                        ++numID;
+                        out << "\t" << numID << line << endl;
+                    }
+                }
+            }
+
             out << endl << "Column meanings:" << endl
                 << "  Unique: Number of unique site patterns" << endl
                 << "  Infor:  Number of parsimony-informative sites" << endl
@@ -1870,211 +1906,6 @@ void reportPhyloAnalysis(Params &params, IQTree &tree, ModelCheckpoint &model_in
         outError(ERR_WRITE_OUTPUT, outfile);
     }
     
-    printOutfilesInfo(params, tree);
-}
-
-void reportPhyloAnalysisMPI(Params &params, IQTree &tree, ModelCheckpoint &model_info) {
-    string outfile = params.out_prefix;
-
-    ofstream out;
-    outfile += ".iqtree";
-
-    if (MPIHelper::getInstance().isMaster()) {
-        try {
-            out.exceptions(ios::failbit | ios::badbit);
-            out.open(outfile.c_str());
-        } catch (ios::failure) {
-            outError(ERR_WRITE_OUTPUT, outfile);
-        }
-    }
-
-    PhyloSuperTree *stree = (PhyloSuperTree*) &tree;
-
-    // if (MPIHelper::getInstance().isMaster()) {
-        out << "IQ-TREE " << iqtree_VERSION_MAJOR << "." << iqtree_VERSION_MINOR
-            << iqtree_VERSION_PATCH << " COVID-edition built " << __DATE__ << endl
-                << endl;
-        if (params.partition_file)
-            out << "Partition file name: " << params.partition_file << endl;
-        if (params.aln_file)
-            out << "Input file name: " << params.aln_file << endl;
-
-        if (params.user_file)
-            out << "User tree file name: " << params.user_file << endl;
-        out << "Type of analysis: ";
-        bool modelfinder = params.model_name.substr(0,4)=="TEST" || params.model_name.substr(0,2) == "MF" || params.model_name.empty();
-        if (modelfinder)
-            out << "ModelFinder";
-        if (params.compute_ml_tree) {
-            if (modelfinder)
-                out << " + ";
-            out << "tree reconstruction";
-        }
-        if (params.num_bootstrap_samples > 0) {
-            if (params.compute_ml_tree)
-                out << " + ";
-            out << "non-parametric " << RESAMPLE_NAME << " (" << params.num_bootstrap_samples
-                    << " replicates)";
-        }
-        if (params.gbo_replicates > 0) {
-            out << " + ultrafast " << RESAMPLE_NAME << " (" << params.gbo_replicates << " replicates)";
-        }
-        out << endl;
-        out << "Random seed number: " << params.ran_seed << endl << endl;
-        out << "REFERENCES" << endl << "----------" << endl << endl;
-        reportReferences(params, out);
-
-        out << "SEQUENCE ALIGNMENT" << endl << "------------------" << endl
-                << endl;
-        if (tree.isSuperTree()) {
-        // TODO DS: Changes may be needed here for PoMo.
-            out << "Input data: " << tree.aln->getNSeq()+tree.removed_seqs.size() << " taxa with "
-                    << tree.aln->getNSite() << " partitions and "
-                    << tree.getAlnNSite() << " total sites ("
-                    << ((SuperAlignment*)tree.aln)->computeMissingData()*100 << "% missing data)" << endl << endl;
-
-            int namelen = stree->getMaxPartNameLength();
-            int part;
-            out.width(4);
-            out << left << "  ID" << "\tType\tSeq\tSite\tUnique\tInfor\tInvar\tConst\tName" << endl;
-        }
-    // }
-
-    MPI_Barrier(MPI_COMM_WORLD);
-
-    stringstream ss;
-    int part = 0;
-    for (PhyloSuperTree::iterator it = stree->begin(); it != stree->end(); it++, part++) {
-        //out << "FOR PARTITION " << stree->part_info[part].name << ":" << endl << endl;
-        //reportAlignment(out, *((*it)->aln));
-        ss.width(4);
-        ss << right << part+1;
-        ss << "\t";
-        switch ((*it)->aln->seq_type) {
-        case SEQ_BINARY: ss << "BIN"; break;
-        case SEQ_CODON: ss << "CODON"; break;
-        case SEQ_DNA: ss << "DNA"; break;
-        case SEQ_MORPH: ss << "MORPH"; break;
-        case SEQ_MULTISTATE: ss << "MULTI"; break;
-        case SEQ_PROTEIN: ss << "AA"; break;
-        case SEQ_POMO: ss << "POMO"; break;
-        case SEQ_UNKNOWN: ss << "???"; break;
-        }
-        ss << "\t" << (*it)->aln->getNSeq() << "\t" << (*it)->aln->getNSite()
-            << "\t" << (*it)->aln->getNPattern() << "\t" << (*it)->aln->num_informative_sites
-            << "\t" << (*it)->getAlnNSite() - (*it)->aln->num_variant_sites
-            << "\t" << round((*it)->aln->frac_const_sites*(*it)->getAlnNSite())
-            << "\t";
-        ss << left << (*it)->aln->name;
-        ss << endl;
-    }
-
-    string str = ss.str();
-
-    int LOG_TAG = 20;
-    if (MPIHelper::getInstance().isWorker()) {
-        MPIHelper::getInstance().sendString(str, 0, LOG_TAG);
-    } else {
-        string summary_str = str;
-        for (int i = 1; i < MPIHelper::getInstance().getNumProcesses(); i++) {
-            string msg;
-            MPIHelper::getInstance().recvString(msg, i, LOG_TAG);
-            summary_str += msg;
-        }
-
-        // printf("String: %s\n" ,summary_str.c_str());
-        out << summary_str;
-    }
-
-    if (MPIHelper::getInstance().isMaster()) {
-        out << endl << "Column meanings:" << endl
-                << "  Unique: Number of unique site patterns" << endl
-                << "  Infor:  Number of parsimony-informative sites" << endl
-                << "  Invar:  Number of invariant sites" << endl
-                << "  Const:  Number of constant sites (can be subset of invariant sites)" << endl << endl;
-        
-        out.precision(4);
-        out << fixed;
-    }
-
-    if (!model_info.empty()) {
-        if (MPIHelper::getInstance().isMaster()) {
-            out << "ModelFinder" << endl << "-----------" << endl << endl;
-        }
-//            if (tree.isSuperTree())
-//                pruneModelInfo(model_info, (PhyloSuperTree*)&tree);
-        reportModelSelection(out, params, &model_info, &tree);
-    }
-
-    reportSubstitutionProcess(out, params, tree);
-
-    if (MPIHelper::getInstance().isMaster()) {
-        if (params.compute_ml_tree) {
-            if (params.model_name.find("ONLY") != string::npos || (params.model_name.substr(0,2) == "MF" && params.model_name.substr(0,3) != "MFP")) {
-                out << "TREE USED FOR ModelFinder" << endl
-                    << "-------------------------" << endl << endl;
-            } else if (params.min_iterations == 0) {
-                if (params.user_file)
-                    out << "USER TREE" << endl
-                        << "---------" << endl << endl;
-                else
-                    out << "STARTING TREE" << endl
-                        << "-------------" << endl << endl;
-            } else {
-                out << "MAXIMUM LIKELIHOOD TREE" << endl
-                    << "-----------------------" << endl << endl;
-            }
-
-            tree.setRootNode(params.root);
-
-            if (params.gbo_replicates) {
-                if (tree.boot_consense_logl > tree.getBestScore() + 0.1 && !tree.isSuperTreeUnlinked()) {
-                    out << endl << "**NOTE**: Consensus tree has higher likelihood than ML tree found! Please use consensus tree below." << endl;
-                }
-            }
-        }
-    }
-
-    reportTree(out, params, tree, tree.getBestScore(), tree.logl_variance, true);
-
-    if (tree.isSuperTree() && verbose_mode >= VB_MED) {
-        PhyloSuperTree *stree = (PhyloSuperTree*) &tree;
-//                stree->mapTrees();
-//                int empty_branches = stree->countEmptyBranches();
-//                if (empty_branches) {
-//                    stringstream ss;
-//                    ss << empty_branches << " branches in the overall tree with no phylogenetic information due to missing data!";
-//                    outWarning(ss.str());
-//                }
-
-        int part = 0;
-        for (PhyloSuperTree::iterator it = stree->begin();
-                it != stree->end(); it++, part++) {
-            out << "FOR PARTITION " << (*it)->aln->name
-                    << ":" << endl << endl;
-            (*it)->setRootNode(params.root);
-//                    reportTree(out, params, *(*it), (*it)->computeLikelihood(), (*it)->computeLogLVariance(), false);
-            reportTree(out, params, *(*it), stree->part_info[part].cur_score, 0.0, false);
-        }
-    }
-    
-    exportAliSimCMD(params, tree, out);
-
-    time_t cur_time;
-    time(&cur_time);
-
-    char *date_str;
-    date_str = ctime(&cur_time);
-    out.unsetf(ios_base::fixed);
-    out << "TIME STAMP" << endl << "----------" << endl << endl
-            << "Date and time: " << date_str << "Total CPU time used: "
-            << (double) params.run_time << " seconds (" << convert_time(params.run_time) << ")" << endl
-            << "Total wall-clock time used: " << getRealTime() - params.start_real_time
-            << " seconds (" << convert_time(getRealTime() - params.start_real_time) << ")" << endl << endl;
-
-    //reportCredits(out); // not needed, now in the manual
-    out.close();
-
     printOutfilesInfo(params, tree);
 }
 
@@ -2786,13 +2617,21 @@ void printFinalSearchInfo(Params &params, IQTree &iqtree, double search_cpu_time
         if (!params.non_mpi_treesearch)
             cout << "Total tree length: " << iqtree.treeLength() << endl;
         else {
-            MPI_Barrier(MPI_COMM_WORLD);
+            // MPI_Barrier(MPI_COMM_WORLD);
+            int LOG_TAG = 20;
 
             double length = iqtree.treeLength();
-            double summary_length = length;
-
-            MPI_Allreduce(&length, &summary_length, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-            cout << "Total tree length: " << summary_length << endl;
+            if (MPIHelper::getInstance().isWorker()) {
+                MPI_Send(&length, 1, MPI_DOUBLE, 0, LOG_TAG, MPI_COMM_WORLD);
+            } else {
+                double total_length = length;
+                for (int i = 1; i < MPIHelper::getInstance().getNumProcesses(); i++) {
+                    MPI_Recv(&length, 1, MPI_DOUBLE, i, LOG_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                    total_length += length;
+                }
+                cout << "Total tree length: " << total_length << endl;
+            
+            }
         }
     }
 
@@ -3271,8 +3110,6 @@ void runTreeReconstruction(Params &params, IQTree* &iqtree) {
     /***************************************** DO STOCHASTIC TREE SEARCH *******************************************/
     if (params.min_iterations > 0 && !params.tree_spr) {
         iqtree->doTreeSearch();
-        MPI_Barrier(MPI_COMM_WORLD);
-        printf("Process %d is here\n", MPIHelper::getInstance().getProcessID());
         iqtree->setAlignment(iqtree->aln);
     } else {
         iqtree->candidateTrees.saveCheckpoint();
@@ -3336,16 +3173,13 @@ void runTreeReconstruction(Params &params, IQTree* &iqtree) {
     }
     if (iqtree->isSuperTree()) {
         ((PhyloSuperTree*) iqtree)->computeBranchLengths();
-        // ((PhyloSuperTree*) iqtree)->printBestPartitionParams((string(params.out_prefix) + ".best_model.nex").c_str());
-        // if (MPIHelper::getInstance().isWorker())
-        MPI_Barrier(MPI_COMM_WORLD);
-        ((PhyloSuperTree*) iqtree)->printBestPartitionParamsMPI((string(params.out_prefix) + ".best_model.nex").c_str());
+        ((PhyloSuperTree*) iqtree)->printBestPartitionParams((string(params.out_prefix) + ".best_model.nex").c_str());
     }
 
     if (!params.non_mpi_treesearch) {
         cout << "BEST SCORE FOUND : " << iqtree->getCurScore() << endl;
     } else {
-        MPI_Barrier(MPI_COMM_WORLD);
+        // MPI_Barrier(MPI_COMM_WORLD);
 
         double score = iqtree->getCurScore();
         double summary_score = score;
@@ -4659,14 +4493,14 @@ void runPhyloAnalysis(Params &params, Checkpoint *checkpoint, IQTree *&tree, Ali
                 SuperAlignment* aln = (SuperAlignment*) alignment;
                 vector<pair<int, int> > costAln;
                 for (int i = 0; i < (int) aln->partitions.size(); i++) {
-                    costAln.push_back(make_pair(aln->partitions[i]->getNSite() * aln->partitions[i]->getNSeq(), i));
+                    costAln.push_back(make_pair(aln->partitions[i]->getNPattern() * aln->partitions[i]->getNSeq(), i));
                 }
 
                 sort(costAln.begin(), costAln.end(), greater<pair<int, int> >());
 
                 priority_queue<pair<int, int>, vector<pair<int, int> >, greater<pair<int, int> > > pq;
                 for (int i = 0; i < MPIHelper::getInstance().getNumProcesses(); i++) {
-                    pq.push(make_pair(0, i));
+                    pq.push(make_pair(0, -i));
                 }
 
                 vector<vector<int> > assigned;
@@ -4675,9 +4509,9 @@ void runPhyloAnalysis(Params &params, Checkpoint *checkpoint, IQTree *&tree, Ali
                 }
 
                 for (int i = 0; i < (int) costAln.size(); i++) {
-                    int cost = pq.top().first; int idx = pq.top().second; pq.pop();
+                    int cost = pq.top().first; int idx = -pq.top().second; pq.pop();
                     assigned[idx].push_back(costAln[i].second);
-                    pq.push(make_pair(cost + costAln[i].first, idx));
+                    pq.push(make_pair(cost + costAln[i].first, -idx));
                 }
 
                 // int sz = ((SuperAlignment*) alignment)->partitions.size();
@@ -4722,7 +4556,7 @@ void runPhyloAnalysis(Params &params, Checkpoint *checkpoint, IQTree *&tree, Ali
                 alignment = ((SuperAlignment*)alignment)->extractPartitions(seqIDs);
                 tree = newIQTree(params, alignment);
 
-                printf("Process %d, alignment size: %d\n", MPIHelper::getInstance().getProcessID(), alignment->getNSite());
+                // printf("Process %d, alignment size: %d\n", MPIHelper::getInstance().getProcessID(), alignment->getNSite());
             } else {
                 tree = newIQTree(params, alignment);
             }
@@ -4843,13 +4677,7 @@ void runPhyloAnalysis(Params &params, Checkpoint *checkpoint, IQTree *&tree, Ali
             if (params.ancestral_site_concordance)
                 tree->computeAllAncestralSiteConcordance();
             
-            if (!params.non_mpi_treesearch) {
-                if (MPIHelper::getInstance().isMaster()) {
-                    reportPhyloAnalysis(params, *tree, *model_info);
-                }
-            } else {
-                reportPhyloAnalysisMPI(params, *tree, *model_info);
-            }
+            reportPhyloAnalysis(params, *tree, *model_info);
 
             // reinsert identical sequences
             if (tree->removed_seqs.size() > 0) {

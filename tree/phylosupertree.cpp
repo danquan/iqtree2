@@ -1560,153 +1560,150 @@ void PhyloSuperTree::writeBranches(ostream &out) {
 void PhyloSuperTree::printBestPartitionParams(const char *filename) {
     try {
         ofstream out;
-        out.exceptions(ios::failbit | ios::badbit);
-        out.open(filename);
+		if (MPIHelper::getInstance().isMaster()) {
+			out.exceptions(ios::failbit | ios::badbit);
+			out.open(filename);
+		}
         out << "#nexus" << endl
         << "begin sets;" << endl;
+
+		stringstream ss;
         int part;
         SuperAlignment *saln = (SuperAlignment*)aln;
         for (part = 0; part < size(); part++) {
+			ss << "Partition " << saln->partitions[part]->name <<'\n';
             string name = saln->partitions[part]->name;
             replace(name.begin(), name.end(), '+', '_');
-            out << "  charset " << name << " = ";
-            if (!saln->partitions[part]->aln_file.empty()) out << saln->partitions[part]->aln_file << ": ";
+            ss << "  charset " << name << " = ";
+            if (!saln->partitions[part]->aln_file.empty()) ss << saln->partitions[part]->aln_file << ": ";
             /*if (saln->partitions[part]->seq_type == SEQ_CODON)
                 out << "CODON, ";*/
 			if (Params::getInstance().alisim_active)
-            	out << saln->partitions[part]->sequence_type << ", ";
+            	ss << saln->partitions[part]->sequence_type << ", ";
             string pos = saln->partitions[part]->position_spec;
             replace(pos.begin(), pos.end(), ',' , ' ');
-            out << pos << ";" << endl;
+            ss << pos << ";" << endl;
         }
+
+		if (!Params::getInstance().non_mpi_treesearch) {
+			while (ss.eof() == false) {
+				string partition_name;
+				getline(ss, partition_name);
+
+				if (partition_name.empty()) break;
+
+				string output_string;
+				getline(ss, output_string);
+
+				out << output_string << endl;
+			}
+		} else {
+			int LOG_TAG = 20;
+			if (MPIHelper::getInstance().isWorker()) {
+				string str = ss.str();
+				MPIHelper::getInstance().sendString(str, 0, LOG_TAG);
+			} else {
+				for (int worker = 1; worker < MPIHelper::getInstance().getNumProcesses(); ++worker) {
+					string workerSummary;
+					MPIHelper::getInstance().recvString(workerSummary, worker, LOG_TAG);
+					ss << workerSummary;
+				}
+				
+				vector<pair<string, string>> partitions;
+				while (ss.eof() == false) {
+					string partition_name;
+					getline(ss, partition_name);
+
+					if (partition_name.empty()) break;
+
+					string output_string;
+					getline(ss, output_string);
+
+					partitions.push_back(make_pair(partition_name, output_string));
+				}
+
+				sort(partitions.begin(), partitions.end(), [](const pair<string, string>& a, const pair<string, string>& b) {
+					return a.first < b.first;
+				});
+
+				for (const auto& partition : partitions) {
+					out << partition.second << endl;
+				}
+			}
+		}
+
+		ss.str("");
+		ss.clear();
+
         out << "  charpartition mymodels =" << endl;
         for (part = 0; part < size(); part++) {
+			ss << "Partition " << saln->partitions[part]->name << '\n';
+
             string name = saln->partitions[part]->name;
             replace(name.begin(), name.end(), '+', '_');
-            if (part > 0) out << "," << endl;
-            out << "    " << at(part)->getModelNameParams(true) << ": " << name << "{" << at(part)->treeLength() << "}";
+            ss << "    " << at(part)->getModelNameParams(true) << ": " << name << "{" << at(part)->treeLength() << "}";
+			if (part < size()-1) ss << ",";
+			else ss << ";";
+			ss << endl;
         }
-        out << ";" << endl;
+
+		if (!Params::getInstance().non_mpi_treesearch) {
+			while (ss.eof() == false) {
+				string partition_name;
+				getline(ss, partition_name);
+
+				if (partition_name.empty()) break;
+
+				string output_string;
+				getline(ss, output_string);
+
+				out << output_string << endl;
+			}
+		} else {
+			int LOG_TAG = 20;
+			if (MPIHelper::getInstance().isWorker()) {
+				string str = ss.str();
+				MPIHelper::getInstance().sendString(str, 0, LOG_TAG);
+			} else {
+				for (int worker = 1; worker < MPIHelper::getInstance().getNumProcesses(); ++worker) {
+					string workerSummary;
+					MPIHelper::getInstance().recvString(workerSummary, worker, LOG_TAG);
+					ss << workerSummary;
+				}
+
+				vector<pair<string, string>> partitions;
+				while (ss.eof() == false) {
+					string partition_name;
+					getline(ss, partition_name);
+
+					if (partition_name.empty()) break;
+
+					string output_string;
+					getline(ss, output_string);
+
+					output_string.pop_back();
+					output_string.push_back(',');
+
+					partitions.push_back(make_pair(partition_name, output_string));
+				}
+
+				sort(partitions.begin(), partitions.end(), [](const pair<string, string>& a, const pair<string, string>& b) {
+					return a.first < b.first;
+				});
+
+				partitions.back().second.pop_back();
+				partitions.back().second.push_back(';');
+
+				for (const auto& partition : partitions) {
+					out << partition.second << endl;
+				}
+			}
+		}
+
         out << "end;" << endl;
         out.close();
         cout << "Partition information was printed to " << filename << endl;
     } catch (ios::failure &) {
         outError(ERR_WRITE_OUTPUT, filename);
     }
-}
-
-void PhyloSuperTree::printBestPartitionParamsMPI(const char *filename) {
-	printf("Process %d print params\n", MPIHelper::getInstance().getProcessID());
-	SuperAlignment *saln = (SuperAlignment*)aln;
-	Checkpoint* myCheckpoint = new Checkpoint;
-
-	for (int part = 0; part < size(); ++part) {
-		string name = "Charset" + saln->partitions[part]->name;
-		string aln_file = saln->partitions[part]->aln_file;
-
-		myCheckpoint->put(name, aln_file);
-	}
-
-	for (int part = 0; part < size(); ++part) {
-		string name = "Model" + saln->partitions[part]->name + "{" + to_string(at(part)->treeLength()) + "}";
-		string model = at(part)->getModelNameParams(true);
-		
-		myCheckpoint->put(name, model);
-	}
-
-	if (MPIHelper::getInstance().isWorker()) {
-		MPIHelper::getInstance().sendCheckpoint(myCheckpoint, 0);
-	} else {
-		Checkpoint* summaryCheckpoint = myCheckpoint;
-
-		for (int worker = 1; worker < MPIHelper::getInstance().getNumProcesses(); ++worker) {
-			Checkpoint* myCheckpoint = new Checkpoint;
-			int wk = MPIHelper::getInstance().recvCheckpoint(myCheckpoint);
-
-			for (auto it = myCheckpoint->begin(); it != myCheckpoint->end(); ++it) {
-				string name = it->first;
-				string aln_file = it->second;
-				
-				summaryCheckpoint->put(name, aln_file);
-			}
-		}
-
-		stringstream ss;
-		summaryCheckpoint->dump(ss);
-
-		ofstream out;
-		out.exceptions(ios::failbit | ios::badbit);
-		out.open(filename);
-
-		out << "#nexus" << endl;
-		out << "begin sets;" << endl;
-		
-		string line;
-		int numCharsetLines = 0;
-		int numModelLines = 0;
-
-		while (getline(ss, line)) {
-			if (line.find("Charset") != string::npos) {
-				line = line.substr(7);
-				++numCharsetLines;
-
-				string key = line.substr(0, line.find(":"));
-				string value = line.substr(line.find(":") + 2);
-				out << "  charset " << key << " = " << value << ": ;" << endl;
-			} else if (line.find("Model") != string::npos) {
-				line = line.substr(5);
-				++numModelLines;
-				if (numModelLines == 1) {
-					out << "  charpartition mymodels =" << endl;
-				}
-
-				string key = line.substr(0, line.find(":"));
-				string value = line.substr(line.find(":") + 2);
-				out << "    " << value << ": " << key;
-				if (numModelLines == numCharsetLines) {
-					out << ";" << endl;
-				} else {
-					out << "," << endl;
-				}
-			}
-		}
-
-		out << "end;" << endl;
-	}
-
-    // try {
-    //     ofstream out;
-    //     out.exceptions(ios::failbit | ios::badbit);
-    //     out.open(filename, ios::app);
-    //     out << "#nexus" << endl
-    //     << "begin sets;" << endl;
-    //     int part;
-    //     SuperAlignment *saln = (SuperAlignment*)aln;
-    //     for (part = 0; part < size(); part++) {
-    //         string name = saln->partitions[part]->name;
-    //         replace(name.begin(), name.end(), '+', '_');
-    //         out << "  charset " << name << " = ";
-    //         if (!saln->partitions[part]->aln_file.empty()) out << saln->partitions[part]->aln_file << ": ";
-    //         /*if (saln->partitions[part]->seq_type == SEQ_CODON)
-    //             out << "CODON, ";*/
-	// 		if (Params::getInstance().alisim_active)
-    //         	out << saln->partitions[part]->sequence_type << ", ";
-    //         string pos = saln->partitions[part]->position_spec;
-    //         replace(pos.begin(), pos.end(), ',' , ' ');
-    //         out << pos << ";" << endl;
-    //     }
-    //     out << "  charpartition mymodels =" << endl;
-    //     for (part = 0; part < size(); part++) {
-    //         string name = saln->partitions[part]->name;
-    //         replace(name.begin(), name.end(), '+', '_');
-    //         if (part > 0) out << "," << endl;
-    //         out << "    " << at(part)->getModelNameParams(true) << ": " << name << "{" << at(part)->treeLength() << "}";
-    //     }
-    //     out << ";" << endl;
-    //     out << "end;" << endl;
-    //     out.close();
-    //     cout << "Partition information was printed to " << filename << endl;
-    // } catch (ios::failure &) {
-    //     outError(ERR_WRITE_OUTPUT, filename);
-    // }
 }
