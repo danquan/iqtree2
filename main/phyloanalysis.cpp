@@ -4496,7 +4496,7 @@ void runPhyloAnalysis(Params &params, Checkpoint *checkpoint, IQTree *&tree, Ali
                     costAln.push_back(make_pair(1ll * aln->partitions[i]->getNPattern() * aln->partitions[i]->getNSeq() * aln->partitions[i]->getNSeq(), i));
                 }
 
-                sort(costAln.begin(), costAln.end(), greater<pair<int, int> >());
+                sort(costAln.begin(), costAln.end(), greater<pair<long long, int> >());
 
                 priority_queue<pair<long long, int>, vector<pair<long long, int> >, greater<pair<long long, int> > > pq;
                 for (int i = 0; i < MPIHelper::getInstance().getNumProcesses(); i++) {
