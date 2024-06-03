@@ -2231,7 +2231,6 @@ double IQTree::doTreeSearch() {
     ASSERT(candidateTrees.size() != 0);
     cout << "Finish initializing candidate tree set (" << candidateTrees.size() << ")" << endl;
 
-
     cout << "Current best tree score: " << candidateTrees.getBestScore() << " / CPU time: " <<
     getRealTime() - initCPUTime << endl;
     cout << "Number of iterations: " << stop_rule.getCurIt() << endl;

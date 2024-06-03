@@ -903,15 +903,21 @@ void SuperAlignment::splitPartitions(Params &params) {
         return a->getNPattern() * a->getNSeq() > b->getNPattern() * b->getNSeq();
     });
     auto computePartitionCost = [&]() {
-        double totalCost = 0;
+        double mean = 0;
         for (auto part : partitions) {
-            totalCost += part->getNPattern() * part->getNSeq();
+            mean += part->getNPattern() * part->getNSeq();
         }
-        return totalCost / 24;
+        mean /= partitions.size();
+        int numSplit = min(10, (int) partitions.size());
+        for (int i = 0; i < numSplit; ++i) {
+            if (partitions[i]->getNPattern() * partitions[i]->getNSeq() < mean * 5) {
+                return partitions[i]->getNPattern() * partitions[i]->getNSeq();
+            }
+        }
+        return partitions[numSplit]->getNPattern() * partitions[numSplit]->getNSeq();
     };
     
     double partitionCost = computePartitionCost();
-
     const std::string splitDir = string(params.out_prefix) + "/split/";
     const std::string prefixPath = string(params.out_prefix) + "/tmp/";
     const std::string queuePath = prefixPath + "queue/";
@@ -1217,7 +1223,7 @@ void SuperAlignment::splitPartitions(Params &params) {
         double begin_wallclock_time = getRealTime();
         double begin_cpu_time = getCPUTime();
 
-        if (aln->getNPattern() * aln->getNSeq() < partitionCost) {
+        if (aln->getNPattern() * aln->getNSeq() <= partitionCost) {
             aln->printAlignment(IN_PHYLIP, (splitDir + aln->name).c_str());
             printf("Process %d: Done %s in %s (of wall-clock time) %s (of CPU time)\n", MPIHelper::getInstance().getProcessID(), aln->name.c_str(), convert_time(getRealTime() - begin_wallclock_time).c_str(), convert_time(getCPUTime() - begin_cpu_time).c_str());
             MPIHelper::getInstance().decrementSharedCounter(WORKING_COUNT);
