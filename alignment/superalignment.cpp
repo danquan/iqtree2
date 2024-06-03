@@ -903,10 +903,11 @@ void SuperAlignment::splitPartitions(Params &params) {
         return a->getNPattern() * a->getNSeq() > b->getNPattern() * b->getNSeq();
     });
     auto computePartitionCost = [&]() {
-        // only split the top 5% of the partitions
-        int numPartitions = partitions.size();
-        int partitionID = numPartitions / 20;
-        return partitions[partitionID]->getNPattern() * partitions[partitionID]->getNSeq();
+        double totalCost = 0;
+        for (auto part : partitions) {
+            totalCost += part->getNPattern() * part->getNSeq();
+        }
+        return totalCost / 24;
     };
     
     double partitionCost = computePartitionCost();
@@ -1015,6 +1016,7 @@ void SuperAlignment::splitPartitions(Params &params) {
             "-m", &model[0],
             "-t", &treefile[0],
             "--sitelh", 
+            "--fast",
             "--safe", 
             "-T", &std::to_string(params.num_threads)[0],
             "-keep-ident",
