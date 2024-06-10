@@ -907,14 +907,7 @@ void SuperAlignment::splitPartitions(Params &params) {
         for (auto part : partitions) {
             mean += part->getNPattern() * part->getNSeq();
         }
-        mean /= partitions.size();
-        int numSplit = min(10, (int) partitions.size());
-        for (int i = 0; i < numSplit; ++i) {
-            if (partitions[i]->getNPattern() * partitions[i]->getNSeq() < mean * 5) {
-                return partitions[i]->getNPattern() * partitions[i]->getNSeq();
-            }
-        }
-        return partitions[numSplit]->getNPattern() * partitions[numSplit]->getNSeq();
+        return mean / partitions.size() * 4;
     };
     
     double partitionCost = computePartitionCost();
