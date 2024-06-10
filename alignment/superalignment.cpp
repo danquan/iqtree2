@@ -908,13 +908,7 @@ void SuperAlignment::splitPartitions(Params &params) {
             mean += part->getNPattern() * part->getNSeq();
         }
         mean /= partitions.size();
-        int numSplit = min(10, (int) partitions.size());
-        for (int i = 0; i < numSplit; ++i) {
-            if (partitions[i]->getNPattern() * partitions[i]->getNSeq() < mean * 5) {
-                return partitions[i]->getNPattern() * partitions[i]->getNSeq();
-            }
-        }
-        return partitions[numSplit]->getNPattern() * partitions[numSplit]->getNSeq();
+        return mean * 4;
     };
     
     double partitionCost = computePartitionCost();
@@ -1135,56 +1129,19 @@ void SuperAlignment::splitPartitions(Params &params) {
         return models;
     };
 
-    auto getBIC = [&](Alignment* aln, std::string treefile) {
-        std::ifstream inp(prefixPath + aln->name + "_BIC.iqtree");
-        if (!inp) {
-            aln->printAlignment(IN_PHYLIP, (prefixPath + aln->name).c_str());
+    std::map<std::string, std::vector<Alignment*>> results;
+    std::map<std::string, std::string> groupName;
+    std::map<std::string, std::vector<int>> siteID;
 
-            std::string arg_s = prefixPath + aln->name;
-            std::string arg_prefix = prefixPath + aln->name + "_BIC";
-            char* argv[] = {
-                "", 
-                "-s", &arg_s[0],
-                "-mset", &params.model_set[0],
-                "--prefix", &arg_prefix[0],
-                "-m", "MF",
-                "--fast",
-                "--safe",
-                "-T", &std::to_string(params.num_threads)[0],
-                "-t", &treefile[0],
-                "-keep-ident",
-                "--redo"
-            };
-            int argc = sizeof(argv) / sizeof(char*);
-            Params::addParams(argc, argv);
-            
-            int numProcesses = MPIHelper::getInstance().getNumProcesses();
-            int processID = MPIHelper::getInstance().getProcessID();
-            MPIHelper::getInstance().setNumProcesses(1);
-            MPIHelper::getInstance().setProcessID(0);
-            Checkpoint *checkpoint = new Checkpoint;
-            runPhyloAnalysis(Params::getInstance(), checkpoint);
-
-            MPIHelper::getInstance().setNumProcesses(numProcesses);
-            MPIHelper::getInstance().setProcessID(processID);
-            Params::removeParams();
-
-            inp = std::ifstream(prefixPath + aln->name + "_BIC.iqtree");
-        }
-        std::string line;
-        while (std::getline(inp, line)) {
-            if (line.find("Bayesian information criterion (BIC) score:") != std::string::npos) {
-                std::string str = line.substr(line.find(":") + 2);
-                return std::stod(str);
-            }
-        }
-        assert(0);
-    };
     if (MPIHelper::getInstance().isMaster()) {
-        for (auto aln : partitions) {
+        for (auto& aln : partitions) {
             int id = MPIHelper::getInstance().incrementSharedCounter(BACK);
             std::string filename = queuePath + aln->name + "_" + std::to_string(id);
             aln->printAlignment(IN_PHYLIP, filename.c_str());
+            groupName[aln->name] = aln->name;
+            for (int i = 0; i < aln->getNSite(); ++i) {
+                siteID[aln->name].push_back(i + 1);
+            }
         }
     }
 
@@ -1224,7 +1181,7 @@ void SuperAlignment::splitPartitions(Params &params) {
         double begin_cpu_time = getCPUTime();
 
         if (aln->getNPattern() * aln->getNSeq() <= partitionCost) {
-            aln->printAlignment(IN_PHYLIP, (splitDir + aln->name).c_str());
+            results[groupName[aln->name]].push_back(aln);
             printf("Process %d: Done %s in %s (of wall-clock time) %s (of CPU time)\n", MPIHelper::getInstance().getProcessID(), aln->name.c_str(), convert_time(getRealTime() - begin_wallclock_time).c_str(), convert_time(getCPUTime() - begin_cpu_time).c_str());
             MPIHelper::getInstance().decrementSharedCounter(WORKING_COUNT);
             continue;
@@ -1266,7 +1223,7 @@ void SuperAlignment::splitPartitions(Params &params) {
                 else sitesOfParts[1].push_back(i);
             }
             if (getSmallParts().size()) {
-                aln->printAlignment(IN_PHYLIP, (splitDir + aln->name).c_str());
+                results[groupName[aln->name]].push_back(aln);
                 printf("Process %d: Done %s in %s (of wall-clock time) %s (of CPU time)\n", MPIHelper::getInstance().getProcessID(), aln->name.c_str(), convert_time(getRealTime() - begin_wallclock_time).c_str(), convert_time(getCPUTime() - begin_cpu_time).c_str());
                 MPIHelper::getInstance().decrementSharedCounter(WORKING_COUNT);
                 continue;
@@ -1306,7 +1263,7 @@ void SuperAlignment::splitPartitions(Params &params) {
         small = getSmallParts();
 
         if (sitesOfParts.size() - small.size() < 2) {
-            aln->printAlignment(IN_PHYLIP, (splitDir + aln->name).c_str());
+            results[groupName[aln->name]].push_back(aln);
             printf("Process %d: Done %s in %s (of wall-clock time) %s (of CPU time)\n", MPIHelper::getInstance().getProcessID(), aln->name.c_str(), convert_time(getRealTime() - begin_wallclock_time).c_str(), convert_time(getCPUTime() - begin_cpu_time).c_str());
             MPIHelper::getInstance().decrementSharedCounter(WORKING_COUNT);
             continue;
@@ -1336,45 +1293,40 @@ void SuperAlignment::splitPartitions(Params &params) {
             subAln->extractSites(aln, sitesOfParts[i]);
             subAln->name = aln->name + "_" + std::to_string(i);
             subAlns.push_back(subAln);
-        }
-        if (!params.lock_BIC_check) {
-            // check if the partition is good
-            double oldBic = getBIC(aln, treefile);
-            double newBic = 0;
-            for (auto subAln : subAlns)
-                newBic += getBIC(subAln, treefile);
-            // cout << "Old BIC: " << oldBic << " New BIC: " << newBic << endl;
-            if (oldBic >= newBic) {
-                printf("Aln %s is split, better BIC score\n", aln->name.c_str());
-                for (auto subAln : subAlns) {
-                    MPIHelper::getInstance().lock();
-                    int id = MPIHelper::getInstance().incrementSharedCounter(BACK);
-                    std::string filename = queuePath + subAln->name + "_" + std::to_string(id);
-                    subAln->printAlignment(IN_PHYLIP, filename.c_str());
-                    MPIHelper::getInstance().unlock();
-                }
-            } else {
-                printf("Aln %s is not split, worser BIC score\n", aln->name.c_str());
-                aln->printAlignment(IN_PHYLIP, (splitDir + aln->name).c_str());  
+
+            groupName[subAln->name] = groupName[aln->name];
+            for (int j = 0; j < sitesOfParts[i].size(); ++j) {
+                siteID[subAln->name].push_back(siteID[aln->name][sitesOfParts[i][j]]);
             }
-        } else {
-            printf("Aln %s is split, better BIC score\n", aln->name.c_str());    
-            for (auto subAln : subAlns) {
-                MPIHelper::getInstance().lock();
-                int id = MPIHelper::getInstance().incrementSharedCounter(BACK);
-                std::string filename = queuePath + subAln->name + "_" + std::to_string(id);
-                subAln->printAlignment(IN_PHYLIP, filename.c_str());
-                MPIHelper::getInstance().unlock();
-            }
+        } 
+        for (auto subAln : subAlns) {
+            MPIHelper::getInstance().lock();
+            int id = MPIHelper::getInstance().incrementSharedCounter(BACK);
+            std::string filename = queuePath + subAln->name + "_" + std::to_string(id);
+            subAln->printAlignment(IN_PHYLIP, filename.c_str());
+            MPIHelper::getInstance().unlock();
         }
         
         printf("Process %d: Done %s in %s (of wall-clock time) %s (of CPU time)\n", MPIHelper::getInstance().getProcessID(), aln->name.c_str(), convert_time(getRealTime() - begin_wallclock_time).c_str(), convert_time(getCPUTime() - begin_cpu_time).c_str());
         MPIHelper::getInstance().decrementSharedCounter(WORKING_COUNT);
     }
-    for (int i = 0; i < partitions.size(); ++i) {
-        delete partitions[i];
+
+    for (auto& [group_name, partitions]: results) {
+        int n = partitions.size();
+        ofstream out(splitDir + group_name);
+        out << "#nexus\nbegin sets;\n";
+        for (int i = 0; i < n; ++i) {
+            out << "charset " << group_name << "_" << i << " = ";
+            vector<int> site_id = siteID[partitions[i]->name];
+            for (int j = 0; j < site_id.size(); ++j) {
+                out << site_id[j];
+                if (j < site_id.size() - 1) out << ",";
+            }
+            out << ";\n";
+        }
+        out << "end;\n";
+        out.close();
     }
-    partitions.clear();
     
     MPIHelper::getInstance().barrier();
     if (MPIHelper::getInstance().isMaster()) {
