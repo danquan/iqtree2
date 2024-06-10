@@ -1129,19 +1129,13 @@ void SuperAlignment::splitPartitions(Params &params) {
         return models;
     };
 
-    std::map<std::string, std::vector<Alignment*>> results;
-    std::map<std::string, std::string> groupName;
-    std::map<std::string, std::vector<int>> siteID;
+    Checkpoint *ckp = new Checkpoint;
 
     if (MPIHelper::getInstance().isMaster()) {
         for (auto& aln : partitions) {
             int id = MPIHelper::getInstance().incrementSharedCounter(BACK);
             std::string filename = queuePath + aln->name + "_" + std::to_string(id);
             aln->printAlignment(IN_PHYLIP, filename.c_str());
-            groupName[aln->name] = aln->name;
-            for (int i = 0; i < aln->getNSite(); ++i) {
-                siteID[aln->name].push_back(i + 1);
-            }
         }
     }
 
@@ -1181,7 +1175,6 @@ void SuperAlignment::splitPartitions(Params &params) {
         double begin_cpu_time = getCPUTime();
 
         if (aln->getNPattern() * aln->getNSeq() <= partitionCost) {
-            results[groupName[aln->name]].push_back(aln);
             printf("Process %d: Done %s in %s (of wall-clock time) %s (of CPU time)\n", MPIHelper::getInstance().getProcessID(), aln->name.c_str(), convert_time(getRealTime() - begin_wallclock_time).c_str(), convert_time(getCPUTime() - begin_cpu_time).c_str());
             MPIHelper::getInstance().decrementSharedCounter(WORKING_COUNT);
             continue;
@@ -1223,7 +1216,6 @@ void SuperAlignment::splitPartitions(Params &params) {
                 else sitesOfParts[1].push_back(i);
             }
             if (getSmallParts().size()) {
-                results[groupName[aln->name]].push_back(aln);
                 printf("Process %d: Done %s in %s (of wall-clock time) %s (of CPU time)\n", MPIHelper::getInstance().getProcessID(), aln->name.c_str(), convert_time(getRealTime() - begin_wallclock_time).c_str(), convert_time(getCPUTime() - begin_cpu_time).c_str());
                 MPIHelper::getInstance().decrementSharedCounter(WORKING_COUNT);
                 continue;
@@ -1263,7 +1255,6 @@ void SuperAlignment::splitPartitions(Params &params) {
         small = getSmallParts();
 
         if (sitesOfParts.size() - small.size() < 2) {
-            results[groupName[aln->name]].push_back(aln);
             printf("Process %d: Done %s in %s (of wall-clock time) %s (of CPU time)\n", MPIHelper::getInstance().getProcessID(), aln->name.c_str(), convert_time(getRealTime() - begin_wallclock_time).c_str(), convert_time(getCPUTime() - begin_cpu_time).c_str());
             MPIHelper::getInstance().decrementSharedCounter(WORKING_COUNT);
             continue;
@@ -1293,11 +1284,7 @@ void SuperAlignment::splitPartitions(Params &params) {
             subAln->extractSites(aln, sitesOfParts[i]);
             subAln->name = aln->name + "_" + std::to_string(i);
             subAlns.push_back(subAln);
-
-            groupName[subAln->name] = groupName[aln->name];
-            for (int j = 0; j < sitesOfParts[i].size(); ++j) {
-                siteID[subAln->name].push_back(siteID[aln->name][sitesOfParts[i][j]]);
-            }
+            ckp->putVector(subAln->name, sitesOfParts[i]);
         } 
         for (auto subAln : subAlns) {
             MPIHelper::getInstance().lock();
@@ -1310,28 +1297,61 @@ void SuperAlignment::splitPartitions(Params &params) {
         printf("Process %d: Done %s in %s (of wall-clock time) %s (of CPU time)\n", MPIHelper::getInstance().getProcessID(), aln->name.c_str(), convert_time(getRealTime() - begin_wallclock_time).c_str(), convert_time(getCPUTime() - begin_cpu_time).c_str());
         MPIHelper::getInstance().decrementSharedCounter(WORKING_COUNT);
     }
-
-    for (auto& [group_name, partitions]: results) {
-        int n = partitions.size();
-        ofstream out(splitDir + group_name);
-        out << "#nexus\nbegin sets;\n";
-        for (int i = 0; i < n; ++i) {
-            out << "charset " << group_name << "_" << i << " = ";
-            vector<int> site_id = siteID[partitions[i]->name];
-            for (int j = 0; j < site_id.size(); ++j) {
-                out << site_id[j];
-                if (j < site_id.size() - 1) out << ",";
-            }
-            out << ";\n";
-        }
-        out << "end;\n";
-        out.close();
-    }
-    
-    MPIHelper::getInstance().barrier();
+    MPIHelper::getInstance().gatherCheckpoint(ckp);
     if (MPIHelper::getInstance().isMaster()) {
+        std::map<std::string, std::vector<std::vector<int>>> results;
+        std::set<std::string> names;
+        for (auto& [name, sites]: *ckp) {
+            names.insert(name);
+        }
+        std::queue<std::tuple<std::string, std::vector<int>, std::string>> q;
+        for (auto part: partitions) {
+            vector<int> sites;
+            for (int i = 0; i < part->getNSite(); ++i) {
+                sites.push_back(i);
+            }
+            q.push({part->name, sites, part->name});
+        }
+        while (!q.empty()) {
+            auto [name, sites, rootName] = q.front();
+            q.pop();
+            bool isLeaf = true;
+            for (int i = 0; i < 3; ++i) {
+                string subName = name + "_" + std::to_string(i);
+                if (names.find(subName) != names.end()) {
+                    vector<int> subSites;
+                    vector<int> siteOfPart;
+                    ckp->getVector(name + "_" + std::to_string(i), siteOfPart);
+                    for (auto i: siteOfPart) {
+                        subSites.push_back(sites[i]);
+                    }
+                    q.push({subName, subSites, rootName});
+                    isLeaf = false;
+                }
+            }
+            if (isLeaf) {
+                results[rootName].push_back(sites);
+            }
+        }
+        for (auto& [group_name, partitions]: results) {
+            int n = partitions.size();
+            ofstream out(splitDir + group_name);
+            out << "#nexus\nbegin sets;\n";
+            for (int i = 0; i < n; ++i) {
+                out << "charset " << group_name << "_" << i << " = ";
+                vector<int> site_id = partitions[i];
+                for (int j = 0; j < site_id.size(); ++j) {
+                    out << site_id[j] + 1;
+                    if (j < site_id.size() - 1) out << ",";
+                }
+                out << ";\n";
+            }
+            out << "end;\n";
+            out.close();
+        }
         system(("rm -rf " + prefixPath).c_str());
     }
+    MPIHelper::getInstance().barrier();
     
     std::cout.rdbuf(cout_buffer);
     std::cout << "Split partitions took "
