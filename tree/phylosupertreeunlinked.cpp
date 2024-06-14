@@ -60,9 +60,62 @@ int PhyloSuperTreeUnlinked::computeParsimonyTree(const char *out_prefix, Alignme
         try {
             ofstream out;
             out.open(file_name.c_str());
+
+            stringstream ss;
             for (i = 0; i < size(); i++) {
-                at(i)->printTree(out, WT_NEWLINE);
+                ss << "Partition " << at(i)->aln->name << endl;
+                at(i)->printTree(ss, WT_NEWLINE);
             }
+
+            if (!params->non_mpi_treesearch) {
+                while (ss.eof() == false) {
+                    string partition_name;
+                    getline(ss, partition_name);
+
+                    if (partition_name.empty()) break;
+
+                    string output_string;
+                    getline(ss, output_string);
+
+                    out << output_string << endl;
+                }
+            } else {
+                // MPI_Barrier(MPI_COMM_WORLD);
+                int LOG_TAG = 20;
+
+                if (MPIHelper::getInstance().isWorker()) {
+                    string str = ss.str();
+                    MPIHelper::getInstance().sendString(str, 0, LOG_TAG);
+                } else {
+                    for (int worker = 1; worker < MPIHelper::getInstance().getNumProcesses(); worker++) {
+                        string str;
+                        MPIHelper::getInstance().recvString(str, worker, LOG_TAG);
+                        ss << str;
+                    }
+                    
+                    vector<pair<string, string> > tree_strings;
+                    while (ss.eof() == false) {
+                        string partition_name;
+                        getline(ss, partition_name);
+
+                        if (partition_name.empty()) break;
+
+                        string tree_string;
+                        getline(ss, tree_string);
+
+                        tree_strings.push_back(make_pair(partition_name, tree_string));
+                    }
+
+                    sort(tree_strings.begin(), tree_strings.end(), [](const pair<string, string> &a, const pair<string, string> &b) {
+                        return a.first < b.first;
+                    });
+
+                    for (auto &tree_string : tree_strings) {
+                        out << tree_string.second << endl;
+                    }
+                }
+            }
+
             out.close();
         } catch (...) {
             outError("Cannot write to file ", file_name);
@@ -182,6 +235,66 @@ void PhyloSuperTreeUnlinked::printResultTree(string suffix) {
         cout << "Best tree printed to " << tree_file_name << endl;
 }
 
+void PhyloSuperTreeUnlinked::printResultTreeMPI(string suffix) {
+    // if (MPIHelper::getInstance().isWorker()) {
+    //     return;
+    // }
+    if (params->suppress_output_flags & OUT_TREEFILE)
+        return;
+    string tree_file_name = params->out_prefix;
+    tree_file_name += ".treefile";
+    if (suffix.compare("") != 0) {
+        tree_file_name += "." + suffix;
+    }
+    ofstream out;
+    out.open(tree_file_name.c_str());
+
+    stringstream ss;
+    for (iterator tree = begin(); tree != end(); tree++) {
+        ss << "Partition " << (*tree)->aln->name << endl;
+        (*tree)->printTree(ss, WT_BR_LEN | WT_BR_LEN_FIXED_WIDTH | WT_SORT_TAXA | WT_NEWLINE);
+    }
+
+    string tree_string = ss.str();
+
+    if (MPIHelper::getInstance().isWorker()) {
+        MPIHelper::getInstance().sendString(tree_string, 0, TREE_TAG);
+    } else {
+        vector<pair<string, string> > tree_strings;
+        for (int worker = 1; worker < MPIHelper::getInstance().getNumProcesses(); worker++) {
+            // stringstream ss_tmp;
+            
+            string worker_tree_string;
+            MPIHelper::getInstance().recvString(worker_tree_string, worker, TREE_TAG);
+            ss << worker_tree_string;
+        }
+
+        while (ss.eof() == false) {
+            string partition_name;
+            getline(ss, partition_name);
+
+            if (partition_name.empty()) break;
+
+            string tree_string;
+            getline(ss, tree_string);
+
+            tree_strings.push_back(make_pair(partition_name, tree_string));
+        }
+
+        sort(tree_strings.begin(), tree_strings.end(), [](const pair<string, string> &a, const pair<string, string> &b) {
+            return a.first < b.first;
+        });
+
+        for (auto &tree_string : tree_strings) {
+            out << tree_string.second << endl;
+        }
+    }
+
+    out.close();
+    if (verbose_mode >= VB_MED)
+        cout << "Best tree printed to " << tree_file_name << endl;
+}
+
 double PhyloSuperTreeUnlinked::treeLength(Node *node, Node *dad) {
     double len = 0.0;
     for (iterator tree = begin(); tree != end(); tree++)
@@ -219,7 +332,20 @@ pair<int, int> PhyloSuperTreeUnlinked::doNNISearch(bool write_info) {
     }
 
     setCurScore(score);
-    cout << "Log-likelihood: " << score << endl;
+
+    if (!params->non_mpi_treesearch) {
+        cout << "Log-likelihood: " << score << endl;
+    } else {
+        // MPI_Barrier(MPI_COMM_WORLD);
+
+        double summary_score = score;
+        MPI_Allreduce(&score, &summary_score, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+
+        if (MPIHelper::getInstance().isMaster()) {
+            cout << "Log-likelihood: " << summary_score << endl;
+        }
+    }
+
     return std::make_pair(NNIs, NNI_steps);
 }
 
@@ -241,6 +367,7 @@ double PhyloSuperTreeUnlinked::doTreeSearch() {
     bool saved_print_ufboot_trees = params->print_ufboot_trees;
     params->print_ufboot_trees = false;
 
+    stringstream ss;
 #pragma omp parallel for schedule(dynamic) num_threads(num_threads) if (num_threads > 1) reduction(+: tree_lh)
     for (int i = 0; i < size(); i++) {
         IQTree *part_tree = (IQTree*)at(part_order[i]);
@@ -248,19 +375,42 @@ double PhyloSuperTreeUnlinked::doTreeSearch() {
         getCheckpoint()->getSubCheckpoint(ckp, part_tree->aln->name);
         part_tree->setCheckpoint(ckp);
         double score = part_tree->doTreeSearch();
-        tree_lh += score;
 #pragma omp critical
         {
             getCheckpoint()->putSubCheckpoint(ckp, part_tree->aln->name);
             getCheckpoint()->dump();
-            cmust << "Partition " << part_tree->aln->name
-                 << " / Iterations: " << part_tree->stop_rule.getCurIt()
-                 << " / LogL: " << score
-                 << " / Time: " << convert_time(getRealTime() - params->start_real_time)
-                 << endl;
+            tree_lh += score;
+            
+            ss << "Partition " << part_tree->aln->name
+                << " / Iterations: " << part_tree->stop_rule.getCurIt()
+                << " / LogL: " << score
+                << " / Time: " << convert_time(getRealTime() - params->start_real_time)
+                << endl;
         }
         delete ckp;
         part_tree->setCheckpoint(getCheckpoint());
+    }
+
+    if (!params->non_mpi_treesearch) {
+        cmust << ss.str();
+    } else {
+        // MPI_Barrier(MPI_COMM_WORLD);
+        int LOG_TAG = 20;
+
+        if (MPIHelper::getInstance().isWorker()) {
+            string str = ss.str();
+            MPIHelper::getInstance().sendString(str, 0, LOG_TAG);
+        } else {
+            string summary = ss.str();
+            for (int worker = 1; worker < MPIHelper::getInstance().getNumProcesses(); worker++) {
+                string str;
+                MPIHelper::getInstance().recvString(str, worker, LOG_TAG);
+                summary += str;
+            }
+
+            // printf("%s", summary.c_str());
+            cmust << summary.c_str();
+        }
     }
 
     verbose_mode = saved_mode;

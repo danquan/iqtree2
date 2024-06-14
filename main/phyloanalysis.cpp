@@ -183,11 +183,33 @@ void reportModelSelection(ofstream &out, Params &params, ModelCheckpoint *model_
     PhyloSuperTree *stree = (tree->isSuperTree()) ? ((PhyloSuperTree*)tree) : NULL;
     if (tree->isSuperTree()) {
         SuperAlignment *saln = (SuperAlignment*)stree->aln;
+        
+        stringstream ss;
         for (int part = 0; part != stree->size(); part++) {
             if (part != 0)
-                out << ",";
-            out << saln->partitions[part]->model_name << ":" << saln->partitions[part]->name;
+                ss << ",";
+            ss << saln->partitions[part]->model_name << ":" << saln->partitions[part]->name;
         }
+
+        if (!params.non_mpi_treesearch) {
+            out << ss.str();
+        } else {
+            int LOG_TAG = 20;
+            if (MPIHelper::getInstance().isWorker()) {
+                string str = ss.str();
+                MPIHelper::getInstance().sendString(str, 0, LOG_TAG);
+            } else {
+                string summary = ss.str();
+                for (int i = 1; i < MPIHelper::getInstance().getNumProcesses(); i++) {
+                    string str;
+                    MPIHelper::getInstance().recvString(str, i, LOG_TAG);
+                    summary += "," + str;
+                }
+
+                out << summary;
+            }
+        }
+        
 //        string set_name = "";
 //        for (it = model_info.begin(); it != model_info.end(); it++) {
 //            if (it->set_name != set_name) {
@@ -203,17 +225,19 @@ void reportModelSelection(ofstream &out, Params &params, ModelCheckpoint *model_
         out << best_model;
     }
 
-    if (tree->isSuperTree()) {
-        out << endl << endl << "List of best-fit models per partition:" << endl << endl;
-    } else {
-        out << endl << endl << "List of models sorted by "
-            << ((params.model_test_criterion == MTC_BIC) ? "BIC" :
-                ((params.model_test_criterion == MTC_AIC) ? "AIC" : "AICc"))
-            << " scores: " << endl << endl;
+    if (MPIHelper::getInstance().isMaster()) {
+        if (tree->isSuperTree()) {
+            out << endl << endl << "List of best-fit models per partition:" << endl << endl;
+        } else {
+            out << endl << endl << "List of models sorted by "
+                << ((params.model_test_criterion == MTC_BIC) ? "BIC" :
+                    ((params.model_test_criterion == MTC_AIC) ? "AIC" : "AICc"))
+                << " scores: " << endl << endl;
+        }
+        if (tree->isSuperTree())
+            out << "  ID  ";
+        out << "Model                  LogL         AIC      w-AIC        AICc     w-AICc         BIC      w-BIC" << endl;
     }
-    if (tree->isSuperTree())
-        out << "  ID  ";
-    out << "Model                  LogL         AIC      w-AIC        AICc     w-AICc         BIC      w-BIC" << endl;
     /*
     if (is_partitioned)
         out << "----------";
@@ -225,35 +249,68 @@ void reportModelSelection(ofstream &out, Params &params, ModelCheckpoint *model_
 
     CandidateModelSet models;
     model_info->getOrderedModels(tree, models);
+    
+    stringstream ss;
     for (auto it = models.begin(); it != models.end(); it++) {
         if (tree->isSuperTree()) {
-            out.width(4);
-            out << right << setid << "  ";
+            ss.width(4);
+            ss << right << setid << "  ";
             setid++;
         }
-        out.width(15);
-        out << left << it->getName() << " ";
-        out.width(11);
-        out << right << it->logl << " ";
-        out.width(11);
-        out    << it->AIC_score << ((it->AIC_conf) ? " + " : " - ");
-        out.unsetf(ios::fixed);
-        out.width(8);
-        out << it->AIC_weight << " ";
-        out.setf(ios::fixed);
-        out.width(11);
-        out << it->AICc_score << ((it->AICc_conf) ? " + " : " - ");
-        out.unsetf(ios::fixed);
-        out.width(8);
-        out << it->AICc_weight << " ";
-        out.setf(ios::fixed);
-        out.width(11);
-        out << it->BIC_score  << ((it->BIC_conf) ? " + " : " - ");
-        out.unsetf(ios::fixed);
-        out.width(8);
-        out << it->BIC_weight;
-        out.setf(ios::fixed);
-        out << endl;
+        ss.width(15);
+        ss << left << it->getName() << " ";
+        ss.width(11);
+        ss << right << it->logl << " ";
+        ss.width(11);
+        ss    << it->AIC_score << ((it->AIC_conf) ? " + " : " - ");
+        ss.unsetf(ios::fixed);
+        ss.width(8);
+        ss << it->AIC_weight << " ";
+        ss.setf(ios::fixed);
+        ss.width(11);
+        ss << it->AICc_score << ((it->AICc_conf) ? " + " : " - ");
+        ss.unsetf(ios::fixed);
+        ss.width(8);
+        ss << it->AICc_weight << " ";
+        ss.setf(ios::fixed);
+        ss.width(11);
+        ss << it->BIC_score  << ((it->BIC_conf) ? " + " : " - ");
+        ss.unsetf(ios::fixed);
+        ss.width(8);
+        ss << it->BIC_weight;
+        ss.setf(ios::fixed);
+        ss << endl;
+    }
+        
+    if (!params.non_mpi_treesearch) {
+        out << ss.str();
+    } else {
+        int LOG_TAG = 20;
+        if (MPIHelper::getInstance().isWorker()) {
+            string str = ss.str();
+            MPIHelper::getInstance().sendString(str, 0, LOG_TAG);
+        } else {
+            stringstream sss;
+            sss << ss.str();
+            for (int i = 1; i < MPIHelper::getInstance().getNumProcesses(); i++) {
+                string str;
+                MPIHelper::getInstance().recvString(str, i, LOG_TAG);
+                sss << str;
+            }
+
+            int numID = 0;
+            while (sss.eof() == false) {
+                int id;
+                sss >> id;
+
+                string line;
+                getline(sss, line);
+                if (line.empty()) break;
+
+                ++numID;
+                out << "\t" << numID << line << endl;
+            }
+        }
     }
     out.precision(4);
 
@@ -281,14 +338,17 @@ void reportModelSelection(ofstream &out, Params &params, ModelCheckpoint *model_
         out << endl;
     }
     */
-    out << endl;
-    out <<  "AIC, w-AIC   : Akaike information criterion scores and weights." << endl
-         << "AICc, w-AICc : Corrected AIC scores and weights." << endl
-         << "BIC, w-BIC   : Bayesian information criterion scores and weights." << endl << endl
 
-         << "Plus signs denote the 95% confidence sets." << endl
-         << "Minus signs denote significant exclusion." <<endl;
-    out << endl;
+    if (MPIHelper::getInstance().isMaster()) {
+        out << endl;
+        out <<  "AIC, w-AIC   : Akaike information criterion scores and weights." << endl
+            << "AICc, w-AICc : Corrected AIC scores and weights." << endl
+            << "BIC, w-BIC   : Bayesian information criterion scores and weights." << endl << endl
+
+            << "Plus signs denote the 95% confidence sets." << endl
+            << "Minus signs denote significant exclusion." <<endl;
+        out << endl;
+    }
 }
 
 void reportModel(ostream &out, Alignment *aln, ModelSubst *m) {
@@ -617,13 +677,66 @@ void reportTree(ofstream &out, Params &params, PhyloTree &tree, double tree_lh, 
     double AIC_score, AICc_score, BIC_score;
     computeInformationScores(tree_lh, df, ssize, AIC_score, AICc_score, BIC_score);
 
-    out << "Log-likelihood of the tree: " << fixed << tree_lh;
+    // MPI_Barrier(MPI_COMM_WORLD);
+
+    if (!params.non_mpi_treesearch) {
+        out << "Log-likelihood of the tree: " << fixed << tree_lh;
+    } else {
+        int LOG_TAG = 20;
+        if (MPIHelper::getInstance().isWorker()) {
+            MPI_Send(&tree_lh, 1, MPI_DOUBLE, 0, LOG_TAG, MPI_COMM_WORLD);
+        } else {
+            double summary_lh = tree_lh;
+            for (int i = 1; i < MPIHelper::getInstance().getNumProcesses(); i++) {
+                double lh;
+                MPI_Recv(&lh, 1, MPI_DOUBLE, i, LOG_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                summary_lh += lh;
+            }
+
+            out << "Log-likelihood of the tree: " << fixed << summary_lh;
+        }
+    }
+
     if (lh_variance > 0.0)
         out << " (s.e. " << sqrt(lh_variance) << ")";
     out << endl;
-    out    << "Unconstrained log-likelihood (without tree): " << tree.aln->computeUnconstrainedLogL() << endl;
+    if (!params.non_mpi_treesearch) {
+        out    << "Unconstrained log-likelihood (without tree): " << tree.aln->computeUnconstrainedLogL() << endl;
+    } else {
+        int LOG_TAG = 20;
+        if (MPIHelper::getInstance().isWorker()) {
+            double unconstrained_lh = tree.aln->computeUnconstrainedLogL();
+            MPI_Send(&unconstrained_lh, 1, MPI_DOUBLE, 0, LOG_TAG, MPI_COMM_WORLD);
+        } else {
+            double summary_unconstrained_lh = tree.aln->computeUnconstrainedLogL();
+            for (int i = 1; i < MPIHelper::getInstance().getNumProcesses(); i++) {
+                double unconstrained_lh = tree.aln->computeUnconstrainedLogL();
+                MPI_Recv(&unconstrained_lh, 1, MPI_DOUBLE, i, LOG_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                summary_unconstrained_lh += unconstrained_lh;
+            }
 
-    out << "Number of free parameters (#branches + #model parameters): " << df << endl;
+            out << "Unconstrained log-likelihood (without tree): " << summary_unconstrained_lh << endl;
+        }
+    }
+
+    if (!params.non_mpi_treesearch) {
+        out << "Number of free parameters (#branches + #model parameters): " << df << endl;
+    } else {
+        int LOG_TAG = 20;
+        if (MPIHelper::getInstance().isWorker()) {
+            MPI_Send(&df, 1, MPI_INT, 0, LOG_TAG, MPI_COMM_WORLD);
+        } else {
+            int summary_df = df;
+            for (int i = 1; i < MPIHelper::getInstance().getNumProcesses(); i++) {
+                int df;
+                MPI_Recv(&df, 1, MPI_INT, i, LOG_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                summary_df += df;
+            }
+
+            out << "Number of free parameters (#branches + #model parameters): " << summary_df << endl;
+        }
+    
+    }
 //    if (ssize > df) {
 //        if (ssize > 40*df)
 //            out    << "Akaike information criterion (AIC) score: " << AIC_score << endl;
@@ -632,9 +745,39 @@ void reportTree(ofstream &out, Params &params, PhyloTree &tree, double tree_lh, 
 //
 //        out << "Bayesian information criterion (BIC) score: " << BIC_score << endl;
 //    } else
-    out    << "Akaike information criterion (AIC) score: " << AIC_score << endl;
-    out << "Corrected Akaike information criterion (AICc) score: " << AICc_score << endl;
-    out << "Bayesian information criterion (BIC) score: " << BIC_score << endl;
+
+    double summary_AIC_score = AIC_score;
+    double summary_AICc_score = AICc_score;
+    double summary_BIC_score = BIC_score;
+
+    if (!params.non_mpi_treesearch) {
+        out    << "Akaike information criterion (AIC) score: " << AIC_score << endl;
+        out << "Corrected Akaike information criterion (AICc) score: " << AICc_score << endl;
+        out << "Bayesian information criterion (BIC) score: " << BIC_score << endl;
+    } else {
+        if (MPIHelper::getInstance().isWorker()) {
+            MPI_Send(&AIC_score, 1, MPI_DOUBLE, 0, 20, MPI_COMM_WORLD);
+            MPI_Send(&AICc_score, 1, MPI_DOUBLE, 0, 21, MPI_COMM_WORLD);
+            MPI_Send(&BIC_score, 1, MPI_DOUBLE, 0, 22, MPI_COMM_WORLD);
+        } else {
+            double summary_AIC_score = AIC_score;
+            double summary_AICc_score = AICc_score;
+            double summary_BIC_score = BIC_score;
+            for (int i = 1; i < MPIHelper::getInstance().getNumProcesses(); i++) {
+                double AIC_score, AICc_score, BIC_score;
+                MPI_Recv(&AIC_score, 1, MPI_DOUBLE, i, 20, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                MPI_Recv(&AICc_score, 1, MPI_DOUBLE, i, 21, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                MPI_Recv(&BIC_score, 1, MPI_DOUBLE, i, 22, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                summary_AIC_score += AIC_score;
+                summary_AICc_score += AICc_score;
+                summary_BIC_score += BIC_score;
+            }
+        }
+
+        out    << "Akaike information criterion (AIC) score: " << summary_AIC_score << endl;
+        out << "Corrected Akaike information criterion (AICc) score: " << summary_AICc_score << endl;
+        out << "Bayesian information criterion (BIC) score: " << summary_BIC_score << endl;
+    }
 
     if (ssize <= df && main_tree) {
 
@@ -1057,14 +1200,48 @@ void reportSubstitutionProcess(ostream &out, Params &params, IQTree &tree)
         else
             out << "  ID  Model           Speed  Parameters" << endl;
         //out << "-------------------------------------" << endl;
+
+        stringstream ss;
         for (it = stree->begin(), part = 0; it != stree->end(); it++, part++) {
-            out.width(4);
-            out << right << (part+1) << "  ";
-            out.width(14);
+            ss.width(4);
+            ss << right << (part+1) << "  ";
+            ss.width(14);
             if(params.partition_type == BRLEN_OPTIMIZE || params.partition_type == TOPO_UNLINKED)
-                out << left << (*it)->getModelName() << " " << (*it)->treeLength() << "  " << (*it)->getModelNameParams(show_full_params) << endl;
+                ss << left << (*it)->getModelName() << " " << (*it)->treeLength() << "  " << (*it)->getModelNameParams(show_full_params) << endl;
             else
-                out << left << (*it)->getModelName() << " " << stree->part_info[part].part_rate  << "  " << (*it)->getModelNameParams(show_full_params) << endl;
+                ss << left << (*it)->getModelName() << " " << stree->part_info[part].part_rate  << "  " << (*it)->getModelNameParams(show_full_params) << endl;
+        }
+        
+        if (!params.non_mpi_treesearch) {
+            out << ss.str();
+        } else {
+            int LOG_TAG = 20;
+            if (MPIHelper::getInstance().isWorker()) {
+                string str = ss.str();
+                MPIHelper::getInstance().sendString(str, 0, LOG_TAG);
+            } else {
+                stringstream sss;
+                sss << ss.str();
+                for (int i = 1; i < MPIHelper::getInstance().getNumProcesses(); i++) {
+                    string str;
+                    MPIHelper::getInstance().recvString(str, i, LOG_TAG);
+                    sss << str;
+                }
+
+                int numID = 0;
+                while (sss.eof() == false) {
+                    int ID; sss >> ID;
+                    
+                    string line;
+                    getline(sss, line);
+                    if (line.empty()) {
+                        continue;
+                    }
+
+                    numID++;
+                    out << "\t" << numID <<"\t" << line << endl;
+                }
+            }
         }
         out << endl;
         /*
@@ -1091,9 +1268,9 @@ void reportSubstitutionProcess(ostream &out, Params &params, IQTree &tree)
 }
 
 void reportPhyloAnalysis(Params &params, IQTree &tree, ModelCheckpoint &model_info) {
-    if (!MPIHelper::getInstance().isMaster()) {
-        return;
-    }
+    // if (!MPIHelper::getInstance().isMaster()) {
+    //     return;
+    // }
     if (params.suppress_output_flags & OUT_IQTREE) {
         printOutfilesInfo(params, tree);
         return;
@@ -1120,8 +1297,10 @@ void reportPhyloAnalysis(Params &params, IQTree &tree, ModelCheckpoint &model_in
     outfile += ".iqtree";
     try {
         ofstream out;
-        out.exceptions(ios::failbit | ios::badbit);
-        out.open(outfile.c_str());
+        if (MPIHelper::getInstance().isMaster()) {
+            out.exceptions(ios::failbit | ios::badbit);
+            out.open(outfile.c_str());
+        }
         out << "IQ-TREE " << iqtree_VERSION_MAJOR << "." << iqtree_VERSION_MINOR
             << iqtree_VERSION_PATCH << " COVID-edition built " << __DATE__ << endl
                 << endl;
@@ -1159,10 +1338,13 @@ void reportPhyloAnalysis(Params &params, IQTree &tree, ModelCheckpoint &model_in
                 << endl;
         if (tree.isSuperTree()) {
       // TODO DS: Changes may be needed here for PoMo.
-            out << "Input data: " << tree.aln->getNSeq()+tree.removed_seqs.size() << " taxa with "
-                    << tree.aln->getNSite() << " partitions and "
-                    << tree.getAlnNSite() << " total sites ("
-                    << ((SuperAlignment*)tree.aln)->computeMissingData()*100 << "% missing data)" << endl << endl;
+      
+            // out << "Input data: " << tree.aln->getNSeq()+tree.removed_seqs.size() << " taxa with "
+            //         << tree.aln->getNSite() << " partitions and "
+            //         << tree.getAlnNSite() << " total sites ("
+            //         << ((SuperAlignment*)tree.aln)->computeMissingData()*100 << "% missing data)" << endl << endl;
+
+            out << "Input data: " << endl;
 
             PhyloSuperTree *stree = (PhyloSuperTree*) &tree;
             int namelen = stree->getMaxPartNameLength();
@@ -1170,31 +1352,65 @@ void reportPhyloAnalysis(Params &params, IQTree &tree, ModelCheckpoint &model_in
             out.width(4);
             out << left << "  ID" << "\tType\tSeq\tSite\tUnique\tInfor\tInvar\tConst\tName" << endl;
             //out << string(namelen+54, '-') << endl;
+
+            stringstream ss;
             part = 0;
             for (PhyloSuperTree::iterator it = stree->begin(); it != stree->end(); it++, part++) {
                 //out << "FOR PARTITION " << stree->part_info[part].name << ":" << endl << endl;
                 //reportAlignment(out, *((*it)->aln));
-                out.width(4);
-                out << right << part+1;
-                out << "\t";
+                ss.width(4);
+                ss << right << part+1;
+                ss << "\t";
                 switch ((*it)->aln->seq_type) {
-                case SEQ_BINARY: out << "BIN"; break;
-                case SEQ_CODON: out << "CODON"; break;
-                case SEQ_DNA: out << "DNA"; break;
-                case SEQ_MORPH: out << "MORPH"; break;
-                case SEQ_MULTISTATE: out << "MULTI"; break;
-                case SEQ_PROTEIN: out << "AA"; break;
-                case SEQ_POMO: out << "POMO"; break;
-                case SEQ_UNKNOWN: out << "???"; break;
+                case SEQ_BINARY: ss << "BIN"; break;
+                case SEQ_CODON: ss << "CODON"; break;
+                case SEQ_DNA: ss << "DNA"; break;
+                case SEQ_MORPH: ss << "MORPH"; break;
+                case SEQ_MULTISTATE: ss << "MULTI"; break;
+                case SEQ_PROTEIN: ss << "AA"; break;
+                case SEQ_POMO: ss << "POMO"; break;
+                case SEQ_UNKNOWN: ss << "???"; break;
                 }
-                out << "\t" << (*it)->aln->getNSeq() << "\t" << (*it)->aln->getNSite()
+                ss << "\t" << (*it)->aln->getNSeq() << "\t" << (*it)->aln->getNSite()
                     << "\t" << (*it)->aln->getNPattern() << "\t" << (*it)->aln->num_informative_sites
                     << "\t" << (*it)->getAlnNSite() - (*it)->aln->num_variant_sites
                     << "\t" << round((*it)->aln->frac_const_sites*(*it)->getAlnNSite())
                     << "\t";
-                out << left << (*it)->aln->name;
-                out << endl;
+                ss << left << (*it)->aln->name;
+                ss << endl;
             }
+
+            if (!params.non_mpi_treesearch) {
+                out << ss.str();
+            } else {
+                int LOG_TAG = 20;
+                if (MPIHelper::getInstance().isWorker()) {
+                    string str = ss.str();
+                    MPIHelper::getInstance().sendString(str, 0, LOG_TAG);
+                } else {
+                    stringstream sss;
+                    sss << ss.str();
+                    for (int i = 1; i < MPIHelper::getInstance().getNumProcesses(); i++) {
+                        string str;
+                        MPIHelper::getInstance().recvString(str, i, LOG_TAG);
+                        sss << str;
+                    }
+
+                    int numID = 0;
+                    while (sss.eof() == false) {
+                        int id; sss >> id;
+
+                        string line;
+                        getline(sss, line);
+
+                        if (line == "") break;
+
+                        ++numID;
+                        out << "\t" << numID << line << endl;
+                    }
+                }
+            }
+
             out << endl << "Column meanings:" << endl
                 << "  Unique: Number of unique site patterns" << endl
                 << "  Infor:  Number of parsimony-informative sites" << endl
@@ -2398,7 +2614,25 @@ void printFinalSearchInfo(Params &params, IQTree &iqtree, double search_cpu_time
         }
         cout << endl;
     } else {
-        cout << "Total tree length: " << iqtree.treeLength() << endl;
+        if (!params.non_mpi_treesearch)
+            cout << "Total tree length: " << iqtree.treeLength() << endl;
+        else {
+            // MPI_Barrier(MPI_COMM_WORLD);
+            int LOG_TAG = 20;
+
+            double length = iqtree.treeLength();
+            if (MPIHelper::getInstance().isWorker()) {
+                MPI_Send(&length, 1, MPI_DOUBLE, 0, LOG_TAG, MPI_COMM_WORLD);
+            } else {
+                double total_length = length;
+                for (int i = 1; i < MPIHelper::getInstance().getNumProcesses(); i++) {
+                    MPI_Recv(&length, 1, MPI_DOUBLE, i, LOG_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                    total_length += length;
+                }
+                cout << "Total tree length: " << total_length << endl;
+            
+            }
+        }
     }
 
     if (iqtree.isSuperTree() && verbose_mode >= VB_MAX) {
@@ -2901,7 +3135,7 @@ void runTreeReconstruction(Params &params, IQTree* &iqtree) {
 //    if (iqtree.isSuperTree())
 //            ((PhyloSuperTree*) iqtree)->mapTrees();
 
-    if (!MPIHelper::getInstance().isMaster()) {
+    if (!MPIHelper::getInstance().isMaster() && !params.non_mpi_treesearch) {
         delete[] pattern_lh;
         return;
     }
@@ -2942,7 +3176,19 @@ void runTreeReconstruction(Params &params, IQTree* &iqtree) {
         ((PhyloSuperTree*) iqtree)->printBestPartitionParams((string(params.out_prefix) + ".best_model.nex").c_str());
     }
 
-    cout << "BEST SCORE FOUND : " << iqtree->getCurScore() << endl;
+    if (!params.non_mpi_treesearch) {
+        cout << "BEST SCORE FOUND : " << iqtree->getCurScore() << endl;
+    } else {
+        // MPI_Barrier(MPI_COMM_WORLD);
+
+        double score = iqtree->getCurScore();
+        double summary_score = score;
+        MPI_Allreduce(&score, &summary_score, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+
+        if (MPIHelper::getInstance().isMaster()) {
+            cout << "BEST SCORE FOUND : " << summary_score << endl;
+        }
+    }
 
     if (params.write_candidate_trees) {
         printTrees(iqtree->getBestTrees(), params, ".imd_trees");
@@ -3070,7 +3316,8 @@ void runTreeReconstruction(Params &params, IQTree* &iqtree) {
     }
     
     // BUG FIX: readTreeString(bestTreeString) not needed before this line
-    iqtree->printResultTree();
+    if (!params.non_mpi_treesearch) iqtree->printResultTree();
+    else ((PhyloSuperTreeUnlinked*) iqtree)->printResultTreeMPI();
     iqtree->saveCheckpoint();
 
     if (params.upper_bound_NNI) {
@@ -4194,201 +4441,265 @@ void runPhyloAnalysis(Params &params, Checkpoint *checkpoint, IQTree *&tree, Ali
         }
     }
 
-    if (params.symtest) {
-        doSymTest(alignment, params);
-    }
-
-    if (params.print_aln_info) {
-        string site_info_file = string(params.out_prefix) + ".alninfo";
-        alignment->printSiteInfo(site_info_file.c_str());
-        cout << "Alignment sites statistics printed to " << site_info_file << endl;
-    }
-
-    /*************** initialize tree ********************/
-    bool isTreeMix = isTreeMixture(params);
-    
-    if (params.optimize_params_use_hmm && !isTreeMix) {
-        outError("option '-hmmster' is only available for tree mixture model");
-    }
-    
-    if (isTreeMix) {
-        if (params.optimize_params_use_hmm)
-            cout << "HMMSTER ";
-        // tree-mixture model
-        cout << "Tree-mixture model" << endl;
-
-        // the minimum gamma shape should be greater than MIN_GAMMA_SHAPE_TREEMIX for tree mixture model
-        if (params.min_gamma_shape < MIN_GAMMA_SHAPE_TREEMIX) {
-            if (params.min_gamma_shape != MIN_GAMMA_SHAPE)
-                cout << "The minimum value for Gamma shape is changed to " << MIN_GAMMA_SHAPE_TREEMIX << endl;
-            params.min_gamma_shape = MIN_GAMMA_SHAPE_TREEMIX;
-        }
-
-        if (params.user_file == NULL) {
-            // get the number after "+T" for tree-mixture model
-            int treeNum = getTreeMixNum(params);
-            if (treeNum == 0) {
-                outError("Specify the number of trees in the model or input the tree file using the option '-te' for tree-mixture model");
-            }
-            tree = newIQTreeMix(params, alignment, treeNum); // tree mixture model
-        } else {
-            tree = newIQTreeMix(params, alignment); // tree mixture model
-        }
-        if (params.compute_ml_tree_only) {
-            outError("option compute_ml_tree_only cannot be set for tree-mixture model");
-        }
-        tree = newIQTreeMix(params, alignment); // tree mixture model
+    if (params.split && params.partition_type == TOPO_UNLINKED) {
+        static_cast<SuperAlignment*>(alignment)->splitPartitions(params);
     } else {
-        tree = newIQTree(params, alignment);
-    }
+        if (params.symtest) {
+            doSymTest(alignment, params);
+        }
 
-    tree->setCheckpoint(checkpoint);
-    if (isTreeMix) {
-        ((IQTreeMix*) tree)->setMinBranchLen(params);
-    } else if (params.min_branch_length <= 0.0) {
-        params.min_branch_length = 1e-6;
-        if (!tree->isSuperTree() && tree->getAlnNSite() >= 100000) {
-            params.min_branch_length = 0.1 / (tree->getAlnNSite());
-            tree->num_precision = max((int)ceil(-log10(Params::getInstance().min_branch_length))+1, 6);
-            cout.precision(12);
-            cout << "NOTE: minimal branch length is reduced to " << params.min_branch_length << " for long alignment" << endl;
-            cout.precision(3);
+        if (params.print_aln_info) {
+            string site_info_file = string(params.out_prefix) + ".alninfo";
+            alignment->printSiteInfo(site_info_file.c_str());
+            cout << "Alignment sites statistics printed to " << site_info_file << endl;
+        }
+
+        /*************** initialize tree ********************/
+        bool isTreeMix = isTreeMixture(params);
+        
+        if (params.optimize_params_use_hmm && !isTreeMix) {
+            outError("option '-hmmster' is only available for tree mixture model");
+        }
+        
+        if (isTreeMix) {
+            if (params.optimize_params_use_hmm)
+                cout << "HMMSTER ";
+            // tree-mixture model
+            cout << "Tree-mixture model" << endl;
+
+            // the minimum gamma shape should be greater than MIN_GAMMA_SHAPE_TREEMIX for tree mixture model
+            if (params.min_gamma_shape < MIN_GAMMA_SHAPE_TREEMIX) {
+                if (params.min_gamma_shape != MIN_GAMMA_SHAPE)
+                    cout << "The minimum value for Gamma shape is changed to " << MIN_GAMMA_SHAPE_TREEMIX << endl;
+                params.min_gamma_shape = MIN_GAMMA_SHAPE_TREEMIX;
+            }
+
+            if (params.user_file == NULL) {
+                // get the number after "+T" for tree-mixture model
+                int treeNum = getTreeMixNum(params);
+                if (treeNum == 0) {
+                    outError("Specify the number of trees in the model or input the tree file using the option '-te' for tree-mixture model");
+                }
+                tree = newIQTreeMix(params, alignment, treeNum); // tree mixture model
+            } else {
+                tree = newIQTreeMix(params, alignment); // tree mixture model
+            }
+            if (params.compute_ml_tree_only) {
+                outError("option compute_ml_tree_only cannot be set for tree-mixture model");
+            }
+            tree = newIQTreeMix(params, alignment); // tree mixture model
+        } else {
+            if (params.non_mpi_treesearch) {
+                SuperAlignment* aln = (SuperAlignment*) alignment;
+                vector<pair<long long, int> > costAln;
+                for (int i = 0; i < (int) aln->partitions.size(); i++) {
+                    costAln.push_back(make_pair(1ll * aln->partitions[i]->getNPattern() * aln->partitions[i]->getNSeq() * aln->partitions[i]->getNSeq(), i));
+                }
+
+                sort(costAln.begin(), costAln.end(), greater<pair<int, int> >());
+
+                priority_queue<pair<long long, int>, vector<pair<long long, int> >, greater<pair<long long, int> > > pq;
+                for (int i = 0; i < MPIHelper::getInstance().getNumProcesses(); i++) {
+                    pq.push(make_pair(0, -i));
+                }
+
+                vector<vector<int> > assigned;
+                for (int i = 0; i < MPIHelper::getInstance().getNumProcesses(); i++) {
+                    assigned.push_back(vector<int>());
+                }
+
+                for (int i = 0; i < (int) costAln.size(); i++) {
+                    long long cost = pq.top().first; int idx = -pq.top().second; pq.pop();
+                    assigned[idx].push_back(costAln[i].second);
+                    pq.push(make_pair(cost + costAln[i].first, -idx));
+                }
+
+                IntVector seqIDs = IntVector();
+                if (MPIHelper::getInstance().isMaster()) {
+                    for (int worker = 1; worker < MPIHelper::getInstance().getNumProcesses(); worker++) {
+                        IntVector workerSeqIDs = IntVector();
+                        for (int i = 0; i < assigned[worker].size(); i++) {
+                            workerSeqIDs.push_back(assigned[worker][i]);
+                        }
+
+                        int len = workerSeqIDs.size(); 
+                        MPI_Send(&len, 1, MPI_INT, worker, 100, MPI_COMM_WORLD);
+                        MPI_Send(&workerSeqIDs[0], workerSeqIDs.size(), MPI_INT, worker, 100, MPI_COMM_WORLD);
+                        // printf("Worker %d, assigned size: %d\n", worker, assigned[worker].size());
+                    }
+
+                    for (int i = 0; i < assigned[0].size(); i++) {
+                        seqIDs.push_back(assigned[0][i]);
+                    }
+                } else {
+                    int len;
+                    MPI_Recv(&len, 1, MPI_INT, 0, 100, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+                    seqIDs.resize(len);
+                    MPI_Recv(&seqIDs[0], len, MPI_INT, 0, 100, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                }
+                    
+                // for (int i = startID; i < endID; i++) {
+                //     seqIDs.push_back(i);
+                // }
+
+                // printf("Process %d, startID: %d, endID: %d\n", MPIHelper::getInstance().getProcessID(), startID, endID);
+
+                alignment = ((SuperAlignment*)alignment)->extractPartitions(seqIDs);
+                tree = newIQTree(params, alignment);
+
+                // printf("Process %d, alignment size: %d\n", MPIHelper::getInstance().getProcessID(), alignment->getNSite());
+            } else {
+                tree = newIQTree(params, alignment);
+            }
+        }
+
+        tree->setCheckpoint(checkpoint);
+        if (isTreeMix) {
+            ((IQTreeMix*) tree)->setMinBranchLen(params);
+        } else if (params.min_branch_length <= 0.0) {
+            params.min_branch_length = 1e-6;
+            if (!tree->isSuperTree() && tree->getAlnNSite() >= 100000) {
+                params.min_branch_length = 0.1 / (tree->getAlnNSite());
+                tree->num_precision = max((int)ceil(-log10(Params::getInstance().min_branch_length))+1, 6);
+                cout.precision(12);
+                cout << "NOTE: minimal branch length is reduced to " << params.min_branch_length << " for long alignment" << endl;
+                cout.precision(3);
+            }
+            // Increase the minimum branch length if PoMo is used.
+            if (alignment->seq_type == SEQ_POMO) {
+                params.min_branch_length *= alignment->virtual_pop_size * alignment->virtual_pop_size;
+                cout.precision(12);
+                cout << "NOTE: minimal branch length is increased to " << params.min_branch_length << " because PoMo infers number of mutations and frequency shifts" << endl;
+                cout.precision(3);
+            }
         }
         // Increase the minimum branch length if PoMo is used.
         if (alignment->seq_type == SEQ_POMO) {
-            params.min_branch_length *= alignment->virtual_pop_size * alignment->virtual_pop_size;
-            cout.precision(12);
-            cout << "NOTE: minimal branch length is increased to " << params.min_branch_length << " because PoMo infers number of mutations and frequency shifts" << endl;
+            params.max_branch_length *= alignment->virtual_pop_size * alignment->virtual_pop_size;
+            cout.precision(1);
+            cout << "NOTE: maximal branch length is increased to " << params.max_branch_length << " because PoMo infers number of mutations and frequency shifts" << endl;
             cout.precision(3);
         }
-    }
-    // Increase the minimum branch length if PoMo is used.
-    if (alignment->seq_type == SEQ_POMO) {
-        params.max_branch_length *= alignment->virtual_pop_size * alignment->virtual_pop_size;
-        cout.precision(1);
-        cout << "NOTE: maximal branch length is increased to " << params.max_branch_length << " because PoMo infers number of mutations and frequency shifts" << endl;
-        cout.precision(3);
-    }
 
 
-    if (params.concatenate_aln) {
-        Alignment aln(params.concatenate_aln, params.sequence_type, params.intype, params.model_name);
-        cout << "Concatenating " << params.aln_file << " with " << params.concatenate_aln << " ..." << endl;
-        alignment->concatenateAlignment(&aln);
-    }
-
-    if (params.constraint_tree_file) {
-        if (isTreeMix) {
-            outError("Constraint tree does not work with tree-mixture model");
+        if (params.concatenate_aln) {
+            Alignment aln(params.concatenate_aln, params.sequence_type, params.intype, params.model_name);
+            cout << "Concatenating " << params.aln_file << " with " << params.concatenate_aln << " ..." << endl;
+            alignment->concatenateAlignment(&aln);
         }
-        cout << "Reading constraint tree " << params.constraint_tree_file << "..." << endl;
-        tree->constraintTree.readConstraint(params.constraint_tree_file, alignment->getSeqNames());
-        if (params.start_tree == STT_PLL_PARSIMONY)
-            params.start_tree = STT_PARSIMONY;
-        else if (params.start_tree == STT_BIONJ)
-            outError("Constraint tree does not work with -t BIONJ");
-        if (params.num_bootstrap_samples || params.gbo_replicates)
-            cout << "INFO: Constraint tree will be applied to ML tree and all bootstrap trees." << endl;
-    }
 
-    if (params.compute_seq_identity_along_tree) {
-        if (isTreeMix) {
-            outError("Computing sequence identity does not work with tree-mixture model");
-        }
-        if (!params.user_file)
-            outError("Please supply a user tree file!");
-        tree->readTree(params.user_file, params.is_rooted);
-        if (!tree->rooted && !params.root) {
-            outError("Tree is unrooted, thus you have to specify a root with -o option");
-        }
-        tree->setAlignment(tree->aln);
-        if (!tree->rooted)
-            tree->setRootNode(params.root);
-        tree->computeSeqIdentityAlongTree();
-        if (verbose_mode >= VB_MED)
-            tree->drawTree(cout);
-        string out_tree = (string)params.out_prefix + ".seqident_tree";
-        tree->printTree(out_tree.c_str());
-        cout << "Tree with sequence identity printed to " << out_tree << endl;
-    } else if (params.aln_output) {
-        if (isTreeMix) {
-            outError("Coverting alignment feature does not work with tree-mixture model");
-        }
-        /************ convert alignment to other format and write to output file *************/
-        convertAlignment(params, tree);
-    } else if (params.gbo_replicates > 0 && params.user_file && params.second_tree) {
-        // run one of the UFBoot analysis
-//        runGuidedBootstrap(params, alignment, *tree);
-        outError("Obsolete feature");
-    } else if (params.avh_test) {
-        // run one of the wondering test for Arndt
-//        runAvHTest(params, alignment, *tree);
-        outError("Obsolete feature");
-    } else if (params.bootlh_test) {
-        // run Arndt's plot of tree likelihoods against bootstrap alignments
-//        runBootLhTest(params, alignment, *tree);
-        outError("Obsolete feature");
-    } else if (params.num_bootstrap_samples == 0) {
-    /********************************************************************************
-                    THE MAIN MAXIMUM LIKELIHOOD TREE RECONSTRUCTION
-     ********************************************************************************/
-        ModelCheckpoint *model_info = new ModelCheckpoint;
-        alignment->checkGappySeq(params.remove_empty_seq);
-
-        // remove identical sequences
-        if (params.ignore_identical_seqs) {
-            tree->removeIdenticalSeqs(params);
-            if (tree->removed_seqs.size() > 0 && MPIHelper::getInstance().isMaster() && (params.suppress_output_flags & OUT_UNIQUESEQ) == 0) {
-                string filename = (string)params.out_prefix + ".uniqueseq.phy";
-                tree->aln->printAlignment(params.aln_output_format, filename.c_str());
-                cout << endl << "For your convenience alignment with unique sequences printed to " << filename << endl;
+        if (params.constraint_tree_file) {
+            if (isTreeMix) {
+                outError("Constraint tree does not work with tree-mixture model");
             }
+            cout << "Reading constraint tree " << params.constraint_tree_file << "..." << endl;
+            tree->constraintTree.readConstraint(params.constraint_tree_file, alignment->getSeqNames());
+            if (params.start_tree == STT_PLL_PARSIMONY)
+                params.start_tree = STT_PARSIMONY;
+            else if (params.start_tree == STT_BIONJ)
+                outError("Constraint tree does not work with -t BIONJ");
+            if (params.num_bootstrap_samples || params.gbo_replicates)
+                cout << "INFO: Constraint tree will be applied to ML tree and all bootstrap trees." << endl;
         }
-        alignment = NULL; // from now on use tree->aln instead
 
-        startTreeReconstruction(params, tree, *model_info);
-        // call main tree reconstruction
-        if (params.num_runs == 1) {
-            runTreeReconstruction(params, tree);
-        } else {
-            runMultipleTreeReconstruction(params, tree->aln, tree);
-        }
-        
-        if (params.ancestral_site_concordance)
-            tree->computeAllAncestralSiteConcordance();
-        
-        if (MPIHelper::getInstance().isMaster()) {
+        if (params.compute_seq_identity_along_tree) {
+            if (isTreeMix) {
+                outError("Computing sequence identity does not work with tree-mixture model");
+            }
+            if (!params.user_file)
+                outError("Please supply a user tree file!");
+            tree->readTree(params.user_file, params.is_rooted);
+            if (!tree->rooted && !params.root) {
+                outError("Tree is unrooted, thus you have to specify a root with -o option");
+            }
+            tree->setAlignment(tree->aln);
+            if (!tree->rooted)
+                tree->setRootNode(params.root);
+            tree->computeSeqIdentityAlongTree();
+            if (verbose_mode >= VB_MED)
+                tree->drawTree(cout);
+            string out_tree = (string)params.out_prefix + ".seqident_tree";
+            tree->printTree(out_tree.c_str());
+            cout << "Tree with sequence identity printed to " << out_tree << endl;
+        } else if (params.aln_output) {
+            if (isTreeMix) {
+                outError("Coverting alignment feature does not work with tree-mixture model");
+            }
+            /************ convert alignment to other format and write to output file *************/
+            convertAlignment(params, tree);
+        } else if (params.gbo_replicates > 0 && params.user_file && params.second_tree) {
+            // run one of the UFBoot analysis
+    //        runGuidedBootstrap(params, alignment, *tree);
+            outError("Obsolete feature");
+        } else if (params.avh_test) {
+            // run one of the wondering test for Arndt
+    //        runAvHTest(params, alignment, *tree);
+            outError("Obsolete feature");
+        } else if (params.bootlh_test) {
+            // run Arndt's plot of tree likelihoods against bootstrap alignments
+    //        runBootLhTest(params, alignment, *tree);
+            outError("Obsolete feature");
+        } else if (params.num_bootstrap_samples == 0) {
+        /********************************************************************************
+                        THE MAIN MAXIMUM LIKELIHOOD TREE RECONSTRUCTION
+        ********************************************************************************/
+            ModelCheckpoint *model_info = new ModelCheckpoint;
+            alignment->checkGappySeq(params.remove_empty_seq);
+
+            // remove identical sequences
+            if (params.ignore_identical_seqs) {
+                tree->removeIdenticalSeqs(params);
+                if (tree->removed_seqs.size() > 0 && MPIHelper::getInstance().isMaster() && (params.suppress_output_flags & OUT_UNIQUESEQ) == 0) {
+                    string filename = (string)params.out_prefix + ".uniqueseq.phy";
+                    tree->aln->printAlignment(params.aln_output_format, filename.c_str());
+                    cout << endl << "For your convenience alignment with unique sequences printed to " << filename << endl;
+                }
+            }
+            alignment = NULL; // from now on use tree->aln instead
+
+            startTreeReconstruction(params, tree, *model_info);
+            // call main tree reconstruction
+            if (params.num_runs == 1) {
+                runTreeReconstruction(params, tree);
+            } else {
+                runMultipleTreeReconstruction(params, tree->aln, tree);
+            }
+            
+            if (params.ancestral_site_concordance)
+                tree->computeAllAncestralSiteConcordance();
+            
             reportPhyloAnalysis(params, *tree, *model_info);
+
+            // reinsert identical sequences
+            if (tree->removed_seqs.size() > 0) {
+                // BUG FIX: dont use reinsertIdenticalSeqs anymore
+                tree->insertTaxa(tree->removed_seqs, tree->twin_seqs);
+                tree->printResultTree();
+            }
+            delete model_info;
+            
+            if (params.dating_method != "") {
+                doTimeTree(tree);
+            }
+
+        } else {
+            // the classical non-parameter bootstrap (SBS)
+    //        if (params.model_name.find("LINK") != string::npos || params.model_name.find("MERGE") != string::npos)
+    //            outError("-m TESTMERGE is not allowed when doing standard bootstrap. Please first\nfind partition scheme on the original alignment and use it for bootstrap analysis");
+            if (alignment->getNSeq() < 4)
+                outError("It makes no sense to perform bootstrap with less than 4 sequences.");
+            runStandardBootstrap(params, alignment, tree);
         }
 
-        // reinsert identical sequences
-        if (tree->removed_seqs.size() > 0) {
-            // BUG FIX: dont use reinsertIdenticalSeqs anymore
-            tree->insertTaxa(tree->removed_seqs, tree->twin_seqs);
-            tree->printResultTree();
-        }
-        delete model_info;
-        
-        if (params.dating_method != "") {
-            doTimeTree(tree);
-        }
+    //    if (params.upper_bound) {
+    //            UpperBounds(&params, alignment, tree);
+    //    }
 
-    } else {
-        // the classical non-parameter bootstrap (SBS)
-//        if (params.model_name.find("LINK") != string::npos || params.model_name.find("MERGE") != string::npos)
-//            outError("-m TESTMERGE is not allowed when doing standard bootstrap. Please first\nfind partition scheme on the original alignment and use it for bootstrap analysis");
-        if (alignment->getNSeq() < 4)
-            outError("It makes no sense to perform bootstrap with less than 4 sequences.");
-        runStandardBootstrap(params, alignment, tree);
-    }
-
-//    if (params.upper_bound) {
-//            UpperBounds(&params, alignment, tree);
-//    }
-
-    if(verbose_mode >= VB_MED){
-        if(tree->isSuperTree() && params.partition_type != BRLEN_OPTIMIZE){
-            ((PhyloSuperTreePlen*) tree)->printNNIcasesNUM();
+        if(verbose_mode >= VB_MED){
+            if(tree->isSuperTree() && params.partition_type != BRLEN_OPTIMIZE){
+                ((PhyloSuperTreePlen*) tree)->printNNIcasesNUM();
+            }
         }
     }
 
@@ -4397,18 +4708,19 @@ void runPhyloAnalysis(Params &params, Checkpoint *checkpoint, IQTree *&tree, Ali
 }
 
 void runPhyloAnalysis(Params &params, Checkpoint *checkpoint) {
-    IQTree *tree;
-    Alignment *alignment;
+    IQTree *tree = NULL;
+    Alignment *alignment = NULL;
     
     runPhyloAnalysis(params, checkpoint, tree, alignment);
-
-    // 2015-09-22: bug fix, move this line to before deleting tree
-    alignment = tree->aln;
-    delete tree;
-    // BUG FIX: alignment can be changed, should delete tree->aln instead
-    // 2015-09-22: THIS IS STUPID: after deleting tree, one cannot access tree->aln anymore
-//    alignment = tree->aln;
-    delete alignment;
+    if (tree != NULL) {
+        // 2015-09-22: bug fix, move this line to before deleting tree
+        alignment = tree->aln;
+        if (tree != NULL) delete tree;
+        // BUG FIX: alignment can be changed, should delete tree->aln instead
+        // 2015-09-22: THIS IS STUPID: after deleting tree, one cannot access tree->aln anymore
+    //    alignment = tree->aln;
+        if (alignment != NULL) delete alignment;
+    }
 }
 
 /**

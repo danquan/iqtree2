@@ -614,6 +614,8 @@ public:
     static void addParams(int argc, char *argv[]);
     static void removeParams();
 
+    bool lockMPI = false;
+
     /**
      * Parallel for QMaker
     */
@@ -1294,6 +1296,12 @@ public:
       (without using parsimony or observed distances to compute an NJ tree first)
      */
     bool compute_ml_tree_only;
+
+    /**
+     * 
+    */
+    bool non_mpi_treesearch;
+
     /**
             file containing budget information
      */

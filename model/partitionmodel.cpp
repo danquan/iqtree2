@@ -305,7 +305,7 @@ double PartitionModel::targetFunk(double x[]) {
             while (true) {
                 int i;
                 #pragma omp critical
-                i = MPIHelper::getInstance().getTask();
+                i = MPIHelper::getInstance().increment();
             
                 if (i >= ntrees) {
                     break;
@@ -319,16 +319,22 @@ double PartitionModel::targetFunk(double x[]) {
                 part_model->fixParameters(fixed);    
             }
         }
-        MPI_Barrier(MPI_COMM_WORLD);
+
+        #ifdef _IQTREE_MPI
+            MPI_Barrier(MPI_COMM_WORLD);
+        #endif
+
         if (MPIHelper::getInstance().isMaster()) {
             MPIHelper::getInstance().setTask(- ntrees - MPIHelper::getInstance().getNumProcesses() * Params::getInstance().num_threads);
         }
-        MPI_Barrier(MPI_COMM_WORLD);
+
         #ifdef _IQTREE_MPI
+            MPI_Barrier(MPI_COMM_WORLD);
             results = MPIHelper::getInstance().sumProcs(results);
         #endif
             for (auto e : results)
              res += e;
+
     } else if (Params::getInstance().pqmaker) {
         /*----------------------------------- Run pQMaker here ----------------------------------*/
         DoubleVector results(tree->size());
@@ -533,7 +539,10 @@ double PartitionModel::optimizeParameters(int fixed_len, bool write_info, double
 
     for (int step = 0; step < Params::getInstance().model_opt_steps; step++) {
         tree_lh = 0.0;
-        if (Params::getInstance().pqmaker || Params::getInstance().fpqmaker) tree_lhs = DoubleVector(ntrees, 0.0);
+        if (Params::getInstance().pqmaker || Params::getInstance().fpqmaker) {
+            tree_lhs = DoubleVector(ntrees, 0.0);
+        }
+
         if (tree->part_order.empty()) tree->computePartitionOrder();
 
         if (false && Params::getInstance().fpqmaker) {
@@ -544,12 +553,11 @@ double PartitionModel::optimizeParameters(int fixed_len, bool write_info, double
                 int part;
                 #pragma omp critical
                 {
-                    part = MPIHelper::getInstance().getTask();
+                    part = MPIHelper::getInstance().increment();
                 }
 
                 if (part >= ntrees) continue;
                 tree->proc_part_order.push_back(part);
-                printf("Process %d: Partition %d\n", MPIHelper::getInstance().getProcessID(), part);
                 
                 double score;
                 
@@ -581,13 +589,17 @@ double PartitionModel::optimizeParameters(int fixed_len, bool write_info, double
                 // #endif // _IQTREE_MPI
             }
 
-            MPI_Barrier(MPI_COMM_WORLD);
+            #ifdef _IQTREE_MPI
+                MPI_Barrier(MPI_COMM_WORLD);
+            #endif
             
             if (MPIHelper::getInstance().isMaster()) {
                 MPIHelper::getInstance().setTask(- ntrees * MPIHelper::getInstance().getNumProcesses());
             }
 
-            MPI_Barrier(MPI_COMM_WORLD);
+            #ifdef _IQTREE_MPI
+                MPI_Barrier(MPI_COMM_WORLD);
+            #endif
 
         //return ModelFactory::optimizeParameters(fixed_len, write_info);
         #ifdef _IQTREE_MPI
@@ -654,6 +666,7 @@ double PartitionModel::optimizeParameters(int fixed_len, bool write_info, double
 
         } else {
             /*----------------------------------- Run QMaker here ----------------------------------*/
+            stringstream ss;
             #ifdef _OPENMP
             #pragma omp parallel for reduction(+: tree_lh) schedule(dynamic) if(tree->num_threads > 1)
             #endif
@@ -674,15 +687,35 @@ double PartitionModel::optimizeParameters(int fixed_len, bool write_info, double
                 #pragma omp critical
                 #endif
                 {
-                    cout << "Partition " << tree->at(part)->aln->name
+                    ss << "Partition " << tree->at(part)->aln->name
                         << " / Model: " << tree->at(part)->getModelName()
                         << " / df: " << tree->at(part)->getModelFactory()->getNParameters(fixed_len)
                     << " / LogL: " << score << endl;
                 }
             }
+
+            if (!Params::getInstance().non_mpi_treesearch) {
+                cout << ss.str();
+            } else {
+                int LOG_TAG = 20;
+
+                if (MPIHelper::getInstance().isWorker()) {
+                    string str = ss.str();
+                    MPIHelper::getInstance().sendString(str, 0, LOG_TAG);
+                } else {
+                    string summary = ss.str();
+                    for (int i = 1; i < MPIHelper::getInstance().getNumProcesses(); i++) {
+                        string str;
+                        MPIHelper::getInstance().recvString(str, i, LOG_TAG);
+                        summary += str;
+                    }
+
+                    cout << summary;
+                }
+            }
             //return ModelFactory::optimizeParameters(fixed_len, write_info);
         }
-        MPI_Barrier(MPI_COMM_WORLD);
+
         if (!isLinkedModel())
             break;
 
@@ -705,8 +738,28 @@ double PartitionModel::optimizeParameters(int fixed_len, bool write_info, double
         prev_tree_lh = tree_lh;
     }
     
-    if (verbose_mode >= VB_MED || write_info)
-		cout << "Optimal log-likelihood: " << tree_lh << endl;
+    if (verbose_mode >= VB_MED || write_info) {
+        if (!Params::getInstance().non_mpi_treesearch)
+		    cout << "Optimal log-likelihood: " << tree_lh << endl;
+        else {
+            // MPI_Barrier(MPI_COMM_WORLD);
+
+            int LOG_TAG = 20;
+            if (MPIHelper::getInstance().isWorker()) {
+                MPI_Send(&tree_lh, 1, MPI_DOUBLE, 0, LOG_TAG, MPI_COMM_WORLD);
+            } else {
+                double summary_tree_lh = tree_lh;
+                for (int i = 1; i < MPIHelper::getInstance().getNumProcesses(); i++) {
+                    double lh;
+                    MPI_Recv(&lh, 1, MPI_DOUBLE, i, LOG_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                    summary_tree_lh += lh;
+                }
+
+                cout << "Optimal log-likelihood: " << summary_tree_lh << endl;
+            }
+        }
+    }
+    
     // write linked_models
     if (verbose_mode <= VB_MIN && write_info) {
         for (auto it = linked_models.begin(); it != linked_models.end(); it++)

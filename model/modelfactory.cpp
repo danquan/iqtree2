@@ -1389,9 +1389,9 @@ double ModelFactory::optimizeParameters(int fixed_len, bool write_info,
         double new_lh;
 
         // changed to opimise edge length first, and then Q,W,R inside the loop by Thomas on Sept 11, 15
-        if (fixed_len == BRLEN_OPTIMIZE)
+        if (fixed_len == BRLEN_OPTIMIZE) {
             new_lh = tree->optimizeAllBranches(min(i,3), logl_epsilon);  // loop only 3 times in total (previously in v0.9.6 5 times)
-        else if (fixed_len == BRLEN_SCALE) {
+        } else if (fixed_len == BRLEN_SCALE) {
             double scaling = 1.0;
             new_lh = tree->optimizeTreeLengthScaling(MIN_BRLEN_SCALE, scaling, MAX_BRLEN_SCALE, gradient_epsilon);
         } else

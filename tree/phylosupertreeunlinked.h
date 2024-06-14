@@ -129,6 +129,8 @@ public:
      */
     virtual void printResultTree(string suffix = "");
 
+    virtual void printResultTreeMPI(string suffix = "");
+
     /**
      @return sum of all branch lengths
      @param node the starting node, NULL to start from the root

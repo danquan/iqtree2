@@ -54,7 +54,7 @@ public:
         load partitions from program Params
         @param params program Params
      */
-    void readFromParams(Params &params, bool canSplit = true);
+    void readFromParams(Params &params);
     
     /**
      initialize seq_names, taxon_index, buildPattern
