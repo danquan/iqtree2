@@ -37,77 +37,120 @@ void MPIHelper::init(int argc, char *argv[]) {
 void MPIHelper::initSharedMemory() {
 #ifdef _IQTREE_MPI
     if (Params::getInstance().fpqmaker) {
-        MPI_Win_allocate(sizeof(int), sizeof(int), MPI_INFO_NULL, MPI_COMM_WORLD, &shared_counter, &shmwin);
-        if (isMaster()) {
+        if (getNumProcesses() > 1) {
+            MPI_Win_allocate(sizeof(int), sizeof(int), MPI_INFO_NULL, MPI_COMM_WORLD, &shared_counter, &shmwin);
+            if (isMaster()) {
+                shared_counter[0] = 0;
+            }
+        } else {
+            shared_counter = new int[1];
             shared_counter[0] = 0;
         }
     }
     
     if (Params::getInstance().split) {
-        MPI_Win_allocate(sizeof(int) * 3, sizeof(int), MPI_INFO_NULL, MPI_COMM_WORLD, &shared_counter, &shmwin);
-        if (isMaster()) {
+        if (getNumProcesses() > 1) {
+            MPI_Win_allocate(sizeof(int) * 3, sizeof(int), MPI_INFO_NULL, MPI_COMM_WORLD, &shared_counter, &shmwin);
+            if (isMaster()) {
+                shared_counter[0] = 0;
+                shared_counter[1] = 0;
+                shared_counter[2] = 0;
+            }
+        } else {
+            shared_counter = new int[3];
             shared_counter[0] = 0;
             shared_counter[1] = 0;
+            shared_counter[2] = 0;
         }
     }
     barrier();
 #endif
 }
 
-int MPIHelper::increment(int id) {
+int MPIHelper::incrementSharedCounter(int id) {
 #ifdef _IQTREE_MPI
-    int one = 1, ret;
-    MPI_Win_lock(MPI_LOCK_EXCLUSIVE, 0, 0, shmwin);
-    MPI_Fetch_and_op(&one, &ret, MPI_INT, 0, id, MPI_SUM, shmwin);
-    MPI_Win_unlock(0, shmwin);
-    return ret;
+    if (getNumProcesses() > 1) {
+        int one = 1, ret;
+        lock();
+        MPI_Fetch_and_op(&one, &ret, MPI_INT, 0, id, MPI_SUM, shmwin);
+        unlock();
+        return ret;
+    } else {
+        return shared_counter[id]++;
+    }
 #endif
 }
 
-int MPIHelper::decrement(int id) {
+int MPIHelper::decrementSharedCounter(int id) {
 #ifdef _IQTREE_MPI
-    int minus_one = -1, ret;
-    MPI_Win_lock(MPI_LOCK_EXCLUSIVE, 0, 0, shmwin);
-    MPI_Fetch_and_op(&minus_one, &ret, MPI_INT, 0, id, MPI_SUM, shmwin);
-    MPI_Win_unlock(0, shmwin);
-    return ret;
+    if (getNumProcesses() > 1) {
+        int minus_one = -1, ret;
+        lock();
+        MPI_Fetch_and_op(&minus_one, &ret, MPI_INT, 0, id, MPI_SUM, shmwin);
+        unlock();
+        return ret;
+    } else {
+        return shared_counter[id]--;
+    }
 #else
-    if (!shared_counter)
-        shared_counter = new int(0);
+    assert(0);
+#endif
+}
 
-    return *shared_counter++;
+void MPIHelper::lock() {
+#ifdef _IQTREE_MPI
+    if (getNumProcesses() > 1) {
+        if (lockCounter == 0) {
+            MPI_Win_lock(MPI_LOCK_EXCLUSIVE, 0, 0, shmwin);
+        }
+        lockCounter++;
+    }
 #endif
 }
 
 
-void MPIHelper::setTask(int delta) {
+void MPIHelper::unlock() {
 #ifdef _IQTREE_MPI
-    MPI_Win_lock(MPI_LOCK_EXCLUSIVE, 0, 0, shmwin);
-    MPI_Accumulate(&delta, 1, MPI_INT, 0, 0, 1, MPI_INT, MPI_SUM, shmwin);
-    MPI_Win_unlock(0, shmwin);
-#else
-    if (!shared_counter)
-        shared_counter = new int(0);
+    if (getNumProcesses() > 1) {
+        lockCounter--;
+        if (lockCounter == 0) {
+            MPI_Win_unlock(0, shmwin);
+        }
+    }
+#endif
+}
 
-    *shared_counter += delta;
+void MPIHelper::setSharedCounter(int value, int id) {
+#ifdef _IQTREE_MPI
+    if (getNumProcesses() == 1) {
+        shared_counter[id] = value;
+        return;
+    }
+    lock();
+    MPI_Put(&value, 1, MPI_INT, 0, id, 1, MPI_INT, shmwin);
+    unlock();
+#else
+    assert(0);
 #endif
 }
 
 int MPIHelper::getSharedCounter(int id) {
 #ifdef _IQTREE_MPI
-    int ret;
-    MPI_Win_lock(MPI_LOCK_EXCLUSIVE, 0, 0, shmwin);
-    MPI_Get(&ret, 1, MPI_INT, 0, id, 1, MPI_INT, shmwin);
-    MPI_Win_unlock(0, shmwin);
-    return ret;
+    if (getNumProcesses() > 1) {
+        int ret;
+        lock();
+        MPI_Get(&ret, 1, MPI_INT, 0, id, 1, MPI_INT, shmwin);
+        unlock();
+        return ret;
+    } else return shared_counter[id];
 #endif
 }
 
 void MPIHelper::finalize() {
 #ifdef _IQTREE_MPI
-    if (Params::getInstance().fpqmaker || Params::getInstance().split) {
-        MPI_Win_free(&shmwin);
-    }
+    if (Params::getInstance().fpqmaker || Params::getInstance().split)
+        if (getNumProcesses() > 1)
+            MPI_Win_free(&shmwin);
     MPI_Finalize();
 #endif
 }

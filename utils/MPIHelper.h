@@ -61,7 +61,6 @@ public:
     ~MPIHelper();
 
     int getNumProcesses() const {
-        if (Params::getInstance().lockMPI) return 1;
         return numProcesses;
     }
 
@@ -70,17 +69,14 @@ public:
     }
 
     int getProcessID() const {
-        if (Params::getInstance().lockMPI) return 0;
         return processID;
     }
 
     bool isMaster() const {
-        if (Params::getInstance().lockMPI) return 1;
         return processID == PROC_MASTER;
     }
 
     bool isWorker() const {
-        if (Params::getInstance().lockMPI) return 0;
         return processID != PROC_MASTER;
     }
 
@@ -246,13 +242,16 @@ private:
     MPI_Win shmwin;
 #endif
     int *shared_counter;
+    int lockCounter = 0;
 
 public:
-    int getTask();
-    int increment(int id = 0);
-    int decrement(int id = 0);
+
+    int incrementSharedCounter(int id = 0);
+    int decrementSharedCounter(int id = 0);
     int getSharedCounter(int id = 0);
-    void setTask(int delta);
+    void setSharedCounter(int delta, int id = 0);
+    void lock();
+    void unlock();
 
 private:
     int numTreeSent;
