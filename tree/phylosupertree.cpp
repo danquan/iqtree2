@@ -772,6 +772,10 @@ void PhyloSuperTree::reComputeProcPartitionOrder(double *cost)
 			pq.push(make_pair(proc_cost, proc_id));
 		}
 	}
+	for (int i = 0; i < ntrees; i++)
+	{
+		cost[i] = - cost[i];
+	}
 	proc_part_order = MPIHelper::getInstance().getProcVector(proc_parts);
 }
 
