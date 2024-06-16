@@ -624,7 +624,7 @@ public:
     /**
      * Optimize pQMaker using shared memory
     */
-    bool fpqmaker;
+    bool cpqmaker;
 
     /**
      *  Optimize pQMaker by splitting alignments

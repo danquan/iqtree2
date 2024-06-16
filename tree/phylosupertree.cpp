@@ -660,18 +660,20 @@ void PhyloSuperTree::computePartitionOrder() {
 #if defined(_OPENMP) || defined(_IQTREE_MPI)
 	int *id = new int[ntrees];
     double *cost = new double[ntrees];
-    
+	this->cost = new double[ntrees];
+
     for (i = 0; i < ntrees; i++) {
         Alignment *part_aln = at(i)->aln;
         cost[i] = -((double)part_aln->getNSeq())*part_aln->getNPattern()*part_aln->num_states;
         id[i] = i;
+		this->cost[i] = 0;
     }
     quicksort(cost, 0, ntrees-1, id);
     for (i = 0; i < ntrees; i++) 
         part_order[i] = id[i];
 
 #ifdef _IQTREE_MPI
-	if (Params::getInstance().pqmaker) {
+	if (Params::getInstance().pqmaker || Params::getInstance().cpqmaker) {
 		computeProcPartitionOrder(cost);
 	}
 #endif
@@ -735,6 +737,48 @@ void PhyloSuperTree::computeProcPartitionOrder(double *cost)
 	proc_part_order = MPIHelper::getInstance().getProcVector(proc_parts);
 }
 #endif
+
+
+void PhyloSuperTree::reComputeProcPartitionOrder(double *_cost)
+{
+	double *cost = new double[size()];
+	for (int i = 0; i < size(); i++)
+	{
+		cost[i] = _cost[i];
+	}
+	int ntrees = size();
+	int nprocs = MPIHelper::getInstance().getNumProcesses();
+	int *id = new int[ntrees];
+	for (int i = 0; i < ntrees; i++)
+	{
+		id[i] = i;
+		cost[i] = - cost[i];
+	}
+	quicksort(cost, 0, ntrees - 1, id);
+	vector<IntVector> proc_parts(nprocs);
+
+	if (MPIHelper::getInstance().isMaster())
+	{
+		priority_queue<DoubleIntPair, vector<DoubleIntPair>, less<DoubleIntPair>> pq;
+		for (int i = 0; i < nprocs; i++)
+		{
+			pq.push(make_pair(0.0, i));
+		}
+
+		for (int i = 0; i < ntrees; i++)
+		{
+			double proc_cost = pq.top().first;
+			int proc_id = pq.top().second;
+			pq.pop();
+
+			proc_parts[proc_id].push_back(id[i]);
+			proc_cost += cost[i];
+
+			pq.push(make_pair(proc_cost, proc_id));
+		}
+	}
+	proc_part_order = MPIHelper::getInstance().getProcVector(proc_parts);
+}
 
 double PhyloSuperTree::computeLikelihood(double *pattern_lh, bool save_log_value) {
     // TODO: the case for save_log_value = false

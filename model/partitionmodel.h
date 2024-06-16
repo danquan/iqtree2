@@ -179,12 +179,18 @@ protected:
      */
     virtual bool getVariables(double *variables);
 
+    void dfpmin(double p[], int n, double lower[], double upper[]
+                          , double gtol, int *iter, double *fret, double *hessian);
+
 private:
 #ifdef _IQTREE_MPI
     /**
         Synchronize tree branch lengths optimized in multiple processes
      */
     void syncBranchLengths();
+
+    int cntLoop = 0;
+    int batchSize = 1;
 #endif
 };
 
