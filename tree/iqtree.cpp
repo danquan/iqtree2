@@ -831,7 +831,8 @@ void IQTree::initCandidateTreeSet(int nParTrees, int nNNITrees) {
     }
 
     //---- BLOCKING COMMUNICATION
-    syncCandidateTrees(nNNITrees, false);
+    if (!params->non_mpi_treesearch)
+        syncCandidateTrees(nNNITrees, false);
 
 
     vector<string> bestInitTrees; // Set of best initial trees for doing NNIs
@@ -877,7 +878,8 @@ void IQTree::initCandidateTreeSet(int nParTrees, int nNNITrees) {
     }
 
     //---- BLOCKING COMMUNICATION
-    syncCandidateTrees(Params::getInstance().numSupportTrees, true);
+    if (!params->non_mpi_treesearch)
+        syncCandidateTrees(Params::getInstance().numSupportTrees, true);
 
 }
 
@@ -2201,9 +2203,11 @@ double IQTree::doTreeSearch() {
         cout << "--------------------------------------------------------------------" << endl;
     }
 
+    int numProcesses = (params->non_mpi_treesearch) ? 1 : MPIHelper::getInstance().getNumProcesses();
+
     double initCPUTime = getRealTime();
-    int treesPerProc = (params->numInitTrees) / MPIHelper::getInstance().getNumProcesses() - candidateTrees.size();
-    if (params->numInitTrees % MPIHelper::getInstance().getNumProcesses() != 0) {
+    int treesPerProc = (params->numInitTrees) / numProcesses - candidateTrees.size();
+    if (params->numInitTrees % numProcesses != 0) {
         treesPerProc++;
     }
     if (treesPerProc < 0)
@@ -2268,7 +2272,7 @@ double IQTree::doTreeSearch() {
     }
 
     // tracking of worker candidate set is changed from master candidate set
-    candidateset_changed.resize(MPIHelper::getInstance().getNumProcesses(), false);
+    candidateset_changed.resize(numProcesses, false);
     bestcandidate_changed = false;
 
     /*==============================================================================================================
@@ -2287,7 +2291,6 @@ double IQTree::doTreeSearch() {
     stop_rule.getUFBootCountCheck(ufboot_count, ufboot_count_check);
 
     while (!stop_rule.meetStopCondition(stop_rule.getCurIt(), cur_correlation)) {
-
         searchinfo.curIter = stop_rule.getCurIt();
         // estimate logl_cutoff for bootstrap
         if (!boot_orig_logl.empty())
@@ -2297,6 +2300,10 @@ double IQTree::doTreeSearch() {
             estimate_nni_cutoff = false;
             estimateNNICutoff(params);
         }
+
+        // if (MPIHelper::getInstance().getProcessID() == 2) {
+        //     printf("Process 2 heree 2\n");
+        // }
 
         Alignment *saved_aln = aln;
 
@@ -2310,14 +2317,18 @@ double IQTree::doTreeSearch() {
          * Optimize tree with NNI
          *----------------------------------------*/
         pair<int, int> nniInfos; // <num_NNIs, num_steps>
+        // if (MPIHelper::getInstance().getProcessID() == 2)
+        //     printf("Process 2 heree 3\n");
         nniInfos = doNNISearch();
+        // if (MPIHelper::getInstance().getProcessID() == 2)
+        //     printf("Process 2 heree 4\n");
         curTree = getTreeString();
         int pos = addTreeToCandidateSet(curTree, curScore, true, MPIHelper::getInstance().getProcessID());
         if (pos != -2 && pos != -1 && (Params::getInstance().fixStableSplits || Params::getInstance().adaptPertubation))
             candidateTrees.computeSplitOccurences(Params::getInstance().stableSplitThreshold);
 
-        if (MPIHelper::getInstance().isWorker() || MPIHelper::getInstance().gotMessage())
-            syncCurrentTree();
+        // if (MPIHelper::getInstance().isWorker() || MPIHelper::getInstance().gotMessage())
+        //     syncCurrentTree();
 
 
         // TODO: cannot check yet, need to somehow return treechanged
@@ -2413,7 +2424,7 @@ double IQTree::doTreeSearch() {
     
     if(params->ufboot2corr) refineBootTrees();
 
-    if (!early_stop)
+    if (!early_stop && !params->non_mpi_treesearch)
         sendStopMessage();
 
     readTreeString(candidateTrees.getBestTreeStrings()[0]);
@@ -2433,10 +2444,10 @@ double IQTree::doTreeSearch() {
     }
 
 #ifdef _IQTREE_MPI
-    cout << "Total number of trees received: " << MPIHelper::getInstance().getNumTreeReceived() << endl;
-    cout << "Total number of trees sent: " << MPIHelper::getInstance().getNumTreeSent() << endl;
-    cout << "Total number of NNI searches done by myself: " << MPIHelper::getInstance().getNumNNISearch() << endl;
-    MPIHelper::getInstance().resetNumbers();
+    // cout << "Total number of trees received: " << MPIHelper::getInstance().getNumTreeReceived() << endl;
+    // cout << "Total number of trees sent: " << MPIHelper::getInstance().getNumTreeSent() << endl;
+    // cout << "Total number of NNI searches done by myself: " << MPIHelper::getInstance().getNumNNISearch() << endl;
+    // MPIHelper::getInstance().resetNumbers();
 #endif
 
     cout << "TREE SEARCH COMPLETED AFTER " << stop_rule.getCurIt() << " ITERATIONS"
@@ -3430,10 +3441,10 @@ void IQTree::evaluateNNIs(Branches &nniBranches, vector<NNIMove>  &positiveNNIs)
         }
 
         // synchronize tree during optimization step
-        if (MPIHelper::getInstance().isMaster() && candidateset_changed.size() > 0
-            && MPIHelper::getInstance().gotMessage()) {
-            syncCurrentTree();
-        }
+        // if (MPIHelper::getInstance().isMaster() && candidateset_changed.size() > 0
+        //     && MPIHelper::getInstance().gotMessage()) {
+        //     syncCurrentTree();
+        // }
     }
 }
 

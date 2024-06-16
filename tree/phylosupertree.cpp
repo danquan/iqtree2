@@ -1560,33 +1560,146 @@ void PhyloSuperTree::writeBranches(ostream &out) {
 void PhyloSuperTree::printBestPartitionParams(const char *filename) {
     try {
         ofstream out;
-        out.exceptions(ios::failbit | ios::badbit);
-        out.open(filename);
+		if (MPIHelper::getInstance().isMaster()) {
+			out.exceptions(ios::failbit | ios::badbit);
+			out.open(filename);
+		}
         out << "#nexus" << endl
         << "begin sets;" << endl;
+
+		stringstream ss;
         int part;
         SuperAlignment *saln = (SuperAlignment*)aln;
         for (part = 0; part < size(); part++) {
+			ss << "Partition " << saln->partitions[part]->name <<'\n';
             string name = saln->partitions[part]->name;
             replace(name.begin(), name.end(), '+', '_');
-            out << "  charset " << name << " = ";
-            if (!saln->partitions[part]->aln_file.empty()) out << saln->partitions[part]->aln_file << ": ";
+            ss << "  charset " << name << " = ";
+            if (!saln->partitions[part]->aln_file.empty()) ss << saln->partitions[part]->aln_file << ": ";
             /*if (saln->partitions[part]->seq_type == SEQ_CODON)
                 out << "CODON, ";*/
 			if (Params::getInstance().alisim_active)
-            	out << saln->partitions[part]->sequence_type << ", ";
+            	ss << saln->partitions[part]->sequence_type << ", ";
             string pos = saln->partitions[part]->position_spec;
             replace(pos.begin(), pos.end(), ',' , ' ');
-            out << pos << ";" << endl;
+            ss << pos << ";" << endl;
         }
+
+		if (!Params::getInstance().non_mpi_treesearch) {
+			while (ss.eof() == false) {
+				string partition_name;
+				getline(ss, partition_name);
+
+				if (partition_name.empty()) break;
+
+				string output_string;
+				getline(ss, output_string);
+
+				out << output_string << endl;
+			}
+		} else {
+			int LOG_TAG = 20;
+			if (MPIHelper::getInstance().isWorker()) {
+				string str = ss.str();
+				MPIHelper::getInstance().sendString(str, 0, LOG_TAG);
+			} else {
+				for (int worker = 1; worker < MPIHelper::getInstance().getNumProcesses(); ++worker) {
+					string workerSummary;
+					MPIHelper::getInstance().recvString(workerSummary, worker, LOG_TAG);
+					ss << workerSummary;
+				}
+				
+				vector<pair<string, string>> partitions;
+				while (ss.eof() == false) {
+					string partition_name;
+					getline(ss, partition_name);
+
+					if (partition_name.empty()) break;
+
+					string output_string;
+					getline(ss, output_string);
+
+					partitions.push_back(make_pair(partition_name, output_string));
+				}
+
+				sort(partitions.begin(), partitions.end(), [](const pair<string, string>& a, const pair<string, string>& b) {
+					return a.first < b.first;
+				});
+
+				for (const auto& partition : partitions) {
+					out << partition.second << endl;
+				}
+			}
+		}
+
+		ss.str("");
+		ss.clear();
+
         out << "  charpartition mymodels =" << endl;
         for (part = 0; part < size(); part++) {
+			ss << "Partition " << saln->partitions[part]->name << '\n';
+
             string name = saln->partitions[part]->name;
             replace(name.begin(), name.end(), '+', '_');
-            if (part > 0) out << "," << endl;
-            out << "    " << at(part)->getModelNameParams(true) << ": " << name << "{" << at(part)->treeLength() << "}";
+            ss << "    " << at(part)->getModelNameParams(true) << ": " << name << "{" << at(part)->treeLength() << "}";
+			if (part < size()-1) ss << ",";
+			else ss << ";";
+			ss << endl;
         }
-        out << ";" << endl;
+
+		if (!Params::getInstance().non_mpi_treesearch) {
+			while (ss.eof() == false) {
+				string partition_name;
+				getline(ss, partition_name);
+
+				if (partition_name.empty()) break;
+
+				string output_string;
+				getline(ss, output_string);
+
+				out << output_string << endl;
+			}
+		} else {
+			int LOG_TAG = 20;
+			if (MPIHelper::getInstance().isWorker()) {
+				string str = ss.str();
+				MPIHelper::getInstance().sendString(str, 0, LOG_TAG);
+			} else {
+				for (int worker = 1; worker < MPIHelper::getInstance().getNumProcesses(); ++worker) {
+					string workerSummary;
+					MPIHelper::getInstance().recvString(workerSummary, worker, LOG_TAG);
+					ss << workerSummary;
+				}
+
+				vector<pair<string, string>> partitions;
+				while (ss.eof() == false) {
+					string partition_name;
+					getline(ss, partition_name);
+
+					if (partition_name.empty()) break;
+
+					string output_string;
+					getline(ss, output_string);
+
+					output_string.pop_back();
+					output_string.push_back(',');
+
+					partitions.push_back(make_pair(partition_name, output_string));
+				}
+
+				sort(partitions.begin(), partitions.end(), [](const pair<string, string>& a, const pair<string, string>& b) {
+					return a.first < b.first;
+				});
+
+				partitions.back().second.pop_back();
+				partitions.back().second.push_back(';');
+
+				for (const auto& partition : partitions) {
+					out << partition.second << endl;
+				}
+			}
+		}
+
         out << "end;" << endl;
         out.close();
         cout << "Partition information was printed to " << filename << endl;

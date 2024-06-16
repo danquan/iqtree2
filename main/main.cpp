@@ -2249,7 +2249,10 @@ int main(int argc, char *argv[]) {
 
     // 2015-12-05
     Checkpoint *checkpoint = new Checkpoint;
-    string filename = (string)Params::getInstance().out_prefix +".ckp.gz";
+    string filename = (string)Params::getInstance().out_prefix + ".ckp.gz";
+    if (Params::getInstance().non_mpi_treesearch) {
+        filename = (string)Params::getInstance().out_prefix + to_string(MPIHelper::getInstance().getProcessID()) + ".ckp.gz";
+    }
     checkpoint->setFileName(filename);
     
     bool append_log = false;
@@ -2283,8 +2286,10 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    if (MPIHelper::getInstance().isWorker())
-        checkpoint->setFileName("");
+    if (!Params::getInstance().non_mpi_treesearch) {
+        if (MPIHelper::getInstance().isWorker())
+            checkpoint->setFileName("");
+    }
 
     _log_file = Params::getInstance().out_prefix;
     _log_file += ".log";

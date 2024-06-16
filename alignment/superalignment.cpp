@@ -763,22 +763,76 @@ void SuperAlignment::printPartition(ostream &out, const char *aln_file, bool app
 void SuperAlignment::printBestPartition(const char *filename) {
     try {
         ofstream out;
-        out.exceptions(ios::failbit | ios::badbit);
-        out.open(filename);
+        if (MPIHelper::getInstance().isMaster()) {
+            out.exceptions(ios::failbit | ios::badbit);
+            out.open(filename);
+        }
         out << "#nexus" << endl
         << "begin sets;" << endl;
+
+        stringstream ss;
         int part;
         for (part = 0; part < partitions.size(); part++) {
+            ss << "Partition " << partitions[part]->name <<'\n';
+
             string name = partitions[part]->name;
             replace(name.begin(), name.end(), '+', '_');
-            out << "  charset " << name << " = ";
-            if (!partitions[part]->aln_file.empty()) out << partitions[part]->aln_file << ": ";
+            ss << "  charset " << name << " = ";
+            if (!partitions[part]->aln_file.empty()) ss << partitions[part]->aln_file << ": ";
             if (partitions[part]->seq_type == SEQ_CODON)
-                out << "CODON, ";
+                ss << "CODON, ";
             string pos = partitions[part]->position_spec;
             replace(pos.begin(), pos.end(), ',' , ' ');
-            out << pos << ";" << endl;
+            ss << pos << ";" << endl;
         }
+
+        if (!Params::getInstance().non_mpi_treesearch) {
+            while (ss.eof() == false) {
+				string partition_name;
+				getline(ss, partition_name);
+
+				if (partition_name.empty()) break;
+
+				string output_string;
+				getline(ss, output_string);
+
+				out << output_string << endl;
+			}
+        } else {
+            int LOG_TAG = 20;
+            if (MPIHelper::getInstance().isWorker()) {
+                string str = ss.str();
+                MPIHelper::getInstance().sendString(str, 0, LOG_TAG);
+            } else {
+                for (int i = 1; i < MPIHelper::getInstance().getNumProcesses(); i++) {
+                    string str;
+                    MPIHelper::getInstance().recvString(str, i, LOG_TAG);
+                    ss << str;
+                }
+
+                vector<pair<string, string>> partitions;
+				while (ss.eof() == false) {
+					string partition_name;
+					getline(ss, partition_name);
+
+					if (partition_name.empty()) break;
+
+					string output_string;
+					getline(ss, output_string);
+
+					partitions.push_back(make_pair(partition_name, output_string));
+				}
+
+				sort(partitions.begin(), partitions.end(), [](const pair<string, string>& a, const pair<string, string>& b) {
+					return a.first < b.first;
+				});
+
+				for (const auto& partition : partitions) {
+					out << partition.second << endl;
+				}
+            }
+        }
+
         bool ok_model = true;
         for (part = 0; part < partitions.size(); part++)
             if (partitions[part]->model_name.empty()) {
@@ -786,14 +840,72 @@ void SuperAlignment::printBestPartition(const char *filename) {
                 break;
             }
         if (ok_model) {
+            ss.str("");
+            ss.clear();
+
             out << "  charpartition mymodels =" << endl;
             for (part = 0; part < partitions.size(); part++) {
+                ss << "Partition " << partitions[part]->name <<'\n';
+
                 string name = partitions[part]->name;
                 replace(name.begin(), name.end(), '+', '_');
-                if (part > 0) out << "," << endl;
-                out << "    " << partitions[part]->model_name << ": " << name;
+                ss << "    " << partitions[part]->model_name << ": " << name;
+                if (part < partitions.size()-1) ss << ",";
+                else ss << ";";
+                ss << endl;
             }
-            out << ";" << endl;
+
+            if (!Params::getInstance().non_mpi_treesearch) {
+                while (ss.eof() == false) {
+                    string partition_name;
+                    getline(ss, partition_name);
+
+                    if (partition_name.empty()) break;
+
+                    string output_string;
+                    getline(ss, output_string);
+
+                    out << output_string << endl;
+                }
+            } else {
+                int LOG_TAG = 20;
+                if (MPIHelper::getInstance().isWorker()) {
+                    string str = ss.str();
+                    MPIHelper::getInstance().sendString(str, 0, LOG_TAG);
+                } else {
+                    for (int i = 1; i < MPIHelper::getInstance().getNumProcesses(); i++) {
+                        string str;
+                        MPIHelper::getInstance().recvString(str, i, LOG_TAG);
+                        ss << str;
+                    }
+
+                    vector<pair<string, string>> partitions;
+                    while (ss.eof() == false) {
+                        string partition_name;
+                        getline(ss, partition_name);
+
+                        if (partition_name.empty()) break;
+
+                        string output_string;
+                        getline(ss, output_string);
+
+                        output_string.pop_back();
+                        output_string.push_back(',');
+                        partitions.push_back(make_pair(partition_name, output_string));
+                    }
+
+                    sort(partitions.begin(), partitions.end(), [](const pair<string, string>& a, const pair<string, string>& b) {
+                        return a.first < b.first;
+                    });
+
+                    partitions.back().second.pop_back();
+                    partitions.back().second.push_back(';');
+
+                    for (const auto& partition : partitions) {
+                        out << partition.second <<'\n';
+                    }
+                }
+            }
         }
         out << "end;" << endl;
         out.close();
@@ -803,7 +915,6 @@ void SuperAlignment::printBestPartition(const char *filename) {
     }
     
 }
-
 
 void SuperAlignment::printPartitionRaxml(const char *filename) {
     int part;
@@ -849,31 +960,84 @@ void SuperAlignment::printBestPartitionRaxml(const char *filename) {
 //    }
     try {
         ofstream out;
-        out.exceptions(ios::failbit | ios::badbit);
-        out.open(filename);
+        if (MPIHelper::getInstance().isMaster()) {
+            out.exceptions(ios::failbit | ios::badbit);
+            out.open(filename);
+        }
+
+        stringstream ss;
         for (part = 0; part < partitions.size(); part++) {
+            ss << "Partition " << partitions[part]->name <<'\n';
+
             string name = partitions[part]->name;
             replace(name.begin(), name.end(), '+', '_');
             if (partitions[part]->model_name.find("+ASC") != string::npos)
-                out << "ASC_";
+                ss << "ASC_";
             switch (partitions[part]->seq_type) {
-                case SEQ_DNA: out << "DNA"; break;
-                case SEQ_BINARY: out << "BIN"; break;
-                case SEQ_MORPH: out << "MULTI"; break;
+                case SEQ_DNA: ss << "DNA"; break;
+                case SEQ_BINARY: ss << "BIN"; break;
+                case SEQ_MORPH: ss << "MULTI"; break;
                 case SEQ_PROTEIN:
-                    out << partitions[part]->model_name.substr(0, partitions[part]->model_name.find_first_of("*{+"));
+                    ss << partitions[part]->model_name.substr(0, partitions[part]->model_name.find_first_of("*{+"));
                     break;
                 case SEQ_CODON:
-                    out << "CODON_" << partitions[part]->model_name.substr(0, partitions[part]->model_name.find_first_of("*{+"));
+                    ss << "CODON_" << partitions[part]->model_name.substr(0, partitions[part]->model_name.find_first_of("*{+"));
                     break;
-                default: out << partitions[part]->model_name; break;
+                default: ss << partitions[part]->model_name; break;
             }
             if (partitions[part]->model_name.find("+FO") != string::npos)
-                out << "X";
+                ss << "X";
             else if (partitions[part]->model_name.find("+F") != string::npos)
-                out << "F";
+                ss << "F";
             
-            out << ", " << name << " = " << partitions[part]->position_spec << endl;
+            ss << ", " << name << " = " << partitions[part]->position_spec << endl;
+        }
+        
+        if (!Params::getInstance().non_mpi_treesearch) {
+            while (ss.eof() == false) {
+				string partition_name;
+				getline(ss, partition_name);
+
+				if (partition_name.empty()) break;
+
+				string output_string;
+				getline(ss, output_string);
+
+				out << output_string << endl;
+			}
+        } else {
+            int LOG_TAG = 20;
+            if (MPIHelper::getInstance().isWorker()) {
+                string str = ss.str();
+                MPIHelper::getInstance().sendString(str, 0, LOG_TAG);
+            } else {
+                for (int i = 1; i < MPIHelper::getInstance().getNumProcesses(); i++) {
+                    string str;
+                    MPIHelper::getInstance().recvString(str, i, LOG_TAG);
+                    ss << str;
+                }
+
+                vector<pair<string, string>> partitions;
+                while (ss.eof() == false) {
+                    string partition_name;
+                    getline(ss, partition_name);
+
+                    if (partition_name.empty()) break;
+
+                    string output_string;
+                    getline(ss, output_string);
+
+                    partitions.push_back(make_pair(partition_name, output_string));
+                }
+
+                sort(partitions.begin(), partitions.end(), [](const pair<string, string>& a, const pair<string, string>& b) {
+                    return a.first < b.first;
+                });
+
+                for (const auto& partition : partitions) {
+                    out << partition.second << endl;
+                }
+            }
         }
         out.close();
         cout << "Partition information in Raxml format was printed to " << filename << endl;
