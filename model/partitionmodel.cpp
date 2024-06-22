@@ -328,7 +328,7 @@ double PartitionModel::targetFunk(double x[]) {
             for (auto i: tree->proc_part_order)
                 tree->cost[i] += timeCost[i];
             ++cntLoop;
-            if (cntLoop == batchSize) {
+            if (cntLoop == 100) {
                 PhyloSuperTree *tree = (PhyloSuperTree*)site_rate->getTree();
                 DoubleVector proc_cost(tree->size());
                 for (int i = 0; i < tree->size(); i++)
@@ -337,13 +337,9 @@ double PartitionModel::targetFunk(double x[]) {
                 for (int i = 0; i < tree->size(); i++)
                     tree->cost[i] = proc_cost[i];
                 tree->reComputeProcPartitionOrder(tree->cost);
-                set<int> s;
-                for (auto i: tree->proc_part_order) s.insert(i);
                 for (int i = 0; i < tree->size(); i++)
-                    if (s.find(i) == s.end())
-                        tree->cost[i] = 0;
+                    tree->cost[i] = 0;
                 cntLoop = 0;
-                batchSize *= 2;
             }
         }
     } else {
@@ -486,13 +482,8 @@ void PartitionModel::dfpmin(double p[], int n, double lower[], double upper[]
         for (int i = 0; i < tree->size(); i++)
             tree->cost[i] = proc_cost[i];
         tree->reComputeProcPartitionOrder(tree->cost);
-        set<int> s;
-        for (auto i: tree->proc_part_order) s.insert(i);
         for (int i = 0; i < tree->size(); i++)
-            if (s.find(i) == s.end())
-                tree->cost[i] = 0;
-        cntLoop = 0;
-        batchSize = 1;
+            tree->cost[i] = 0;
     }
 }
 

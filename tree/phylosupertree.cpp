@@ -739,13 +739,8 @@ void PhyloSuperTree::computeProcPartitionOrder(double *cost)
 #endif
 
 
-void PhyloSuperTree::reComputeProcPartitionOrder(double *_cost)
+void PhyloSuperTree::reComputeProcPartitionOrder(double *cost)
 {
-	double *cost = new double[size()];
-	for (int i = 0; i < size(); i++)
-	{
-		cost[i] = _cost[i];
-	}
 	int ntrees = size();
 	int nprocs = MPIHelper::getInstance().getNumProcesses();
 	int *id = new int[ntrees];

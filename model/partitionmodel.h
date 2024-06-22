@@ -190,7 +190,6 @@ private:
     void syncBranchLengths();
 
     int cntLoop = 0;
-    int batchSize = 1;
 #endif
 };
 
