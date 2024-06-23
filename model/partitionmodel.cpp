@@ -484,6 +484,7 @@ void PartitionModel::dfpmin(double p[], int n, double lower[], double upper[]
         tree->reComputeProcPartitionOrder(tree->cost);
         for (int i = 0; i < tree->size(); i++)
             tree->cost[i] = 0;
+        cntLoop = 0;
     }
 }
 
