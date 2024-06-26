@@ -481,7 +481,7 @@ void PartitionModel::dfpmin(double p[], int n, double lower[], double upper[]
         proc_cost = MPIHelper::getInstance().sumProcs(proc_cost);
         for (int i = 0; i < tree->size(); i++)
             tree->cost[i] = proc_cost[i];
-        tree->reComputeProcPartitionOrder(tree->cost);
+        if (cntLoop >= 50) tree->reComputeProcPartitionOrder(tree->cost);
         for (int i = 0; i < tree->size(); i++)
             tree->cost[i] = 0;
         cntLoop = 0;
