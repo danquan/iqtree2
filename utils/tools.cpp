@@ -1018,6 +1018,7 @@ void parseArg(int argc, char *argv[], Params &params) {
     verbose_mode = VB_MIN;
     params.pqmaker = false;
     params.cpqmaker = false;
+    params.non_mpi_treesearch = false;
     params.split = false;
     params.tree_gen = NONE;
     params.user_file = NULL;
