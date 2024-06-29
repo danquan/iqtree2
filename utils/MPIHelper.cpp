@@ -81,7 +81,7 @@ int MPIHelper::decrementSharedCounter(int id) {
         return shared_counter[id]--;
     }
 #else
-    assert(0);
+    outError("MPI is not enabled, please do not use MPI RMA!");
 #endif
 }
 
@@ -118,7 +118,7 @@ void MPIHelper::setSharedCounter(int value, int id) {
     MPI_Put(&value, 1, MPI_INT, 0, id, 1, MPI_INT, shmwin);
     unlock();
 #else
-    assert(0);
+    outError("MPI is not enabled, please do not use MPI RMA!");
 #endif
 }
 
@@ -154,7 +154,6 @@ void MPIHelper::syncRandomSeed() {
     if (MPIHelper::getInstance().isWorker()) {
         //        Params::getInstance().ran_seed = rndSeed + task_id * 100000;
         Params::getInstance().ran_seed = rndSeed;
-        //        printf("Process %d: random_seed = %d\n", task_id, Params::getInstance().ran_seed);
     }
 #endif
 }
@@ -217,7 +216,6 @@ void MPIHelper::sendCheckpoint(Checkpoint *ckp, int dest) {
     sendString(str, dest, TREE_TAG);
 }
 
-
 int MPIHelper::recvString(string &str, int src, int tag) {
     MPI_Status status;
     MPI_Probe(src, tag, MPI_COMM_WORLD, &status);
@@ -237,6 +235,26 @@ int MPIHelper::recvCheckpoint(Checkpoint *ckp, int src) {
     stringstream ss(str);
     ckp->load(ss);
     return proc;
+}
+
+void MPIHelper::sendDouble(double val, int dest, int tag) {
+    MPI_Send(&val, 1, MPI_DOUBLE, dest, tag, MPI_COMM_WORLD);
+}
+
+int MPIHelper::recvDouble(double &val, int src, int tag) {
+    MPI_Status status;
+    MPI_Recv(&val, 1, MPI_DOUBLE, src, tag, MPI_COMM_WORLD, &status);
+    return status.MPI_SOURCE;
+}
+
+void MPIHelper::sendInt(int val, int dest, int tag) {
+    MPI_Send(&val, 1, MPI_INT, dest, tag, MPI_COMM_WORLD);
+}
+
+int MPIHelper::recvInt(int &val, int src, int tag) {
+    MPI_Status status;
+    MPI_Recv(&val, 1, MPI_INT, src, tag, MPI_COMM_WORLD, &status);
+    return status.MPI_SOURCE;
 }
 
 void MPIHelper::broadcastCheckpoint(Checkpoint *ckp) {
@@ -321,6 +339,13 @@ DoubleVector MPIHelper::sumProcs(DoubleVector vals)
     DoubleVector sum_vals(proc_size);
     MPI_Allreduce(vals.data(), sum_vals.data(), proc_size, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
     return sum_vals;
+}
+
+double MPIHelper::sumProcs(double val)
+{
+    double sum_val;
+    MPI_Allreduce(&val, &sum_val, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+    return sum_val;
 }
 
 IntVector MPIHelper::getProcVector(const vector<IntVector> &vts)

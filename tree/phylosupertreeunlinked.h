@@ -129,7 +129,13 @@ public:
      */
     virtual void printResultTree(string suffix = "");
 
+    #ifdef _IQTREE_MPI
+    /**
+     print tree to .treefile
+     @param params program parameters, field root is taken
+     */
     virtual void printResultTreeMPI(string suffix = "");
+    #endif
 
     /**
      @return sum of all branch lengths

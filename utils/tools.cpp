@@ -1017,7 +1017,7 @@ void parseArg(int argc, char *argv[], Params &params) {
     progress_display::setProgressDisplay(false);
     verbose_mode = VB_MIN;
     params.pqmaker = false;
-    params.cpqmaker = false;
+    params.pqmaker2 = false;
     params.non_mpi_treesearch = false;
     params.split = false;
     params.tree_gen = NONE;
@@ -1529,8 +1529,8 @@ void parseArg(int argc, char *argv[], Params &params) {
                 params.pqmaker = true;
                 continue;
             }
-            if (strcmp(argv[cnt], "-cpqmaker") == 0 || strcmp(argv[cnt],"--cpqmaker") == 0) {
-                params.cpqmaker = true;
+            if (strcmp(argv[cnt], "-pqmaker2") == 0 || strcmp(argv[cnt],"--pqmaker2") == 0) {
+                params.pqmaker2 = true;
                 continue;
             }
             if (strcmp(argv[cnt], "-split") == 0 || strcmp(argv[cnt],"--split") == 0) {

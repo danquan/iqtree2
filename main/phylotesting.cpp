@@ -677,12 +677,14 @@ string computeFastMLTree(Params &params, Alignment *aln,
         iqtree->getCheckpoint()->dump();
         //        cout << "initTree: " << initTree << endl;
         
+        
+        #ifdef _IQTREE_MPI
         if (!params.non_mpi_treesearch) {
+        #endif
             cout << "Time for fast ML tree search: " << getRealTime() - start_time << " seconds" << endl;
             cout << endl;
+        #ifdef _IQTREE_MPI
         } else {
-            // MPI_Barrier(MPI_COMM_WORLD);
-            
             double runtime = getRealTime() - start_time;
             double summary_time = runtime;
             MPI_Allreduce(&runtime, &summary_time, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
@@ -692,6 +694,7 @@ string computeFastMLTree(Params &params, Alignment *aln,
                 cout << endl;
             }
         }
+        #endif
     }
 
     // restore model epsilon
@@ -977,12 +980,13 @@ void runModelFinder(Params &params, IQTree &iqtree, ModelCheckpoint &model_info)
     cout << endl;
     // cout << "All model information printed to " << model_info.getFileName() << endl;
     
+    #ifdef _IQTREE_MPI
     if (!params.non_mpi_treesearch) {
+    #endif
         cout << "CPU time for ModelFinder: " << cpu_time << " seconds (" << convert_time(cpu_time) << ")" << endl;
         cout << "Wall-clock time for ModelFinder: " << real_time << " seconds (" << convert_time(real_time) << ")" << endl;
+    #ifdef _IQTREE_MPI
     } else {
-        // MPI_Barrier(MPI_COMM_WORLD);
-        
         double cpu_time_summary = cpu_time;
         double real_time_summary = real_time;
         MPI_Allreduce(&cpu_time, &cpu_time_summary, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
@@ -993,6 +997,7 @@ void runModelFinder(Params &params, IQTree &iqtree, ModelCheckpoint &model_info)
             cout << "Wall-clock time for ModelFinder: " << real_time_summary << " seconds (" << convert_time(real_time_summary) << ")" << endl;
         }
     }
+    #endif
 
     //        alignment = iqtree.aln;
     if (test_only) {

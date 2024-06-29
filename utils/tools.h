@@ -622,9 +622,9 @@ public:
     bool pqmaker;
 
     /**
-     * Optimize pQMaker using shared memory
+     * Optimize pQMaker using dynamic scheduling
     */
-    bool cpqmaker;
+    bool pqmaker2;
 
     /**
      *  Optimize pQMaker by splitting alignments

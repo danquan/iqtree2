@@ -37,6 +37,8 @@
 #define BOOT_TAG 3 // Message to please send bootstrap trees
 #define BOOT_TREE_TAG 4 // bootstrap tree tag
 #define LOGL_CUTOFF_TAG 5 // send logl_cutoff for ultrafast bootstrap
+#define LOGL_TAG 6 // Message contain logl values
+#define LOG_TAG 7 // Message contain information to fullfill log file
 
 using namespace std;
 
@@ -107,6 +109,12 @@ public:
     */
 
 #ifdef _IQTREE_MPI
+
+    /** wrapper for MPI_Send a string
+        @param str string to send
+        @param dest destination process
+        @param tag message tag
+    */
     void sendString(string &str, int dest, int tag);
 
     /** wrapper for MPI_Recv a string
@@ -116,6 +124,36 @@ public:
         @return the source process that sent the message
     */
     int recvString(string &str, int src = MPI_ANY_SOURCE, int tag = MPI_ANY_TAG);
+
+    /** wrapper for MPI_Send a double
+        @param val double to send
+        @param dest destination process
+        @param tag message tag
+    */
+    void sendDouble(double val, int dest, int tag);
+
+    /** wrapper for MPI_Recv a double
+        @param[out] val double received
+        @param src source process
+        @param tag message tag
+        @return the source process that sent the message
+    */
+    int recvDouble(double &val, int src = MPI_ANY_SOURCE, int tag = MPI_ANY_TAG);
+
+    /** wrapper for MPI_Send an integer
+        @param val integer to send
+        @param dest destination process
+        @param tag message tag
+    */
+    void sendInt(int val, int dest, int tag);
+
+    /** wrapper for MPI_Recv an integer
+        @param[out] val integer received
+        @param src source process
+        @param tag message tag
+        @return the source process that sent the message
+    */
+    int recvInt(int &val, int src = MPI_ANY_SOURCE, int tag = MPI_ANY_TAG);
 
     /** wrapper for MPI_Send an entire Checkpoint object
         @param ckp Checkpoint object to send
@@ -149,6 +187,13 @@ public:
         @return the summation vector
     */
     DoubleVector sumProcs(DoubleVector vals);
+
+    /*
+        wrapper for MPI_Allreduce
+        @param val the value to sum
+        @return the summation value
+    */
+    double sumProcs(double val);
 
     /**
         wrapper for MPI_Scatterv to scatter a vector of vectors to each process

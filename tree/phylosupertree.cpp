@@ -673,7 +673,7 @@ void PhyloSuperTree::computePartitionOrder() {
         part_order[i] = id[i];
 
 #ifdef _IQTREE_MPI
-	if (Params::getInstance().pqmaker || Params::getInstance().cpqmaker) {
+	if (Params::getInstance().pqmaker || Params::getInstance().pqmaker2) {
 		computeProcPartitionOrder(cost);
 	}
 #endif
@@ -738,7 +738,7 @@ void PhyloSuperTree::computeProcPartitionOrder(double *cost)
 }
 #endif
 
-
+#ifdef _IQTREE_MPI
 void PhyloSuperTree::reComputeProcPartitionOrder(double *cost)
 {
 	int ntrees = size();
@@ -774,6 +774,7 @@ void PhyloSuperTree::reComputeProcPartitionOrder(double *cost)
 	}
 	proc_part_order = MPIHelper::getInstance().getProcVector(proc_parts);
 }
+#endif
 
 double PhyloSuperTree::computeLikelihood(double *pattern_lh, bool save_log_value) {
     // TODO: the case for save_log_value = false
@@ -1624,7 +1625,9 @@ void PhyloSuperTree::printBestPartitionParams(const char *filename) {
             ss << pos << ";" << endl;
         }
 
+        #ifdef _IQTREE_MPI
 		if (!Params::getInstance().non_mpi_treesearch) {
+		#endif
 			while (ss.eof() == false) {
 				string partition_name;
 				getline(ss, partition_name);
@@ -1636,11 +1639,11 @@ void PhyloSuperTree::printBestPartitionParams(const char *filename) {
 
 				out << output_string << endl;
 			}
+        #ifdef _IQTREE_MPI
 		} else {
-			int LOG_TAG = 20;
 			if (MPIHelper::getInstance().isWorker()) {
 				string str = ss.str();
-				MPIHelper::getInstance().sendString(str, 0, LOG_TAG);
+				MPIHelper::getInstance().sendString(str, PROC_MASTER, LOG_TAG);
 			} else {
 				for (int worker = 1; worker < MPIHelper::getInstance().getNumProcesses(); ++worker) {
 					string workerSummary;
@@ -1670,6 +1673,7 @@ void PhyloSuperTree::printBestPartitionParams(const char *filename) {
 				}
 			}
 		}
+		#endif
 
 		ss.str("");
 		ss.clear();
@@ -1686,7 +1690,9 @@ void PhyloSuperTree::printBestPartitionParams(const char *filename) {
 			ss << endl;
         }
 
+        #ifdef _IQTREE_MPI
 		if (!Params::getInstance().non_mpi_treesearch) {
+		#endif
 			while (ss.eof() == false) {
 				string partition_name;
 				getline(ss, partition_name);
@@ -1698,11 +1704,11 @@ void PhyloSuperTree::printBestPartitionParams(const char *filename) {
 
 				out << output_string << endl;
 			}
+        #ifdef _IQTREE_MPI
 		} else {
-			int LOG_TAG = 20;
 			if (MPIHelper::getInstance().isWorker()) {
 				string str = ss.str();
-				MPIHelper::getInstance().sendString(str, 0, LOG_TAG);
+				MPIHelper::getInstance().sendString(str, PROC_MASTER, LOG_TAG);
 			} else {
 				for (int worker = 1; worker < MPIHelper::getInstance().getNumProcesses(); ++worker) {
 					string workerSummary;
@@ -1738,6 +1744,7 @@ void PhyloSuperTree::printBestPartitionParams(const char *filename) {
 				}
 			}
 		}
+		#endif
 
         out << "end;" << endl;
         out.close();

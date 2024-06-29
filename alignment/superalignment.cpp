@@ -786,23 +786,25 @@ void SuperAlignment::printBestPartition(const char *filename) {
             ss << pos << ";" << endl;
         }
 
+        #ifdef _IQTREE_MPI
         if (!Params::getInstance().non_mpi_treesearch) {
+        #endif
             while (ss.eof() == false) {
-				string partition_name;
-				getline(ss, partition_name);
+                string partition_name;
+                getline(ss, partition_name);
 
-				if (partition_name.empty()) break;
+                if (partition_name.empty()) break;
 
-				string output_string;
-				getline(ss, output_string);
+                string output_string;
+                getline(ss, output_string);
 
-				out << output_string << endl;
-			}
+                out << output_string << endl;
+            }
+        #ifdef _IQTREE_MPI
         } else {
-            int LOG_TAG = 20;
             if (MPIHelper::getInstance().isWorker()) {
                 string str = ss.str();
-                MPIHelper::getInstance().sendString(str, 0, LOG_TAG);
+                MPIHelper::getInstance().sendString(str, PROC_MASTER, LOG_TAG);
             } else {
                 for (int i = 1; i < MPIHelper::getInstance().getNumProcesses(); i++) {
                     string str;
@@ -811,27 +813,28 @@ void SuperAlignment::printBestPartition(const char *filename) {
                 }
 
                 vector<pair<string, string>> partitions;
-				while (ss.eof() == false) {
-					string partition_name;
-					getline(ss, partition_name);
+                while (ss.eof() == false) {
+                    string partition_name;
+                    getline(ss, partition_name);
 
-					if (partition_name.empty()) break;
+                    if (partition_name.empty()) break;
 
-					string output_string;
-					getline(ss, output_string);
+                    string output_string;
+                    getline(ss, output_string);
 
-					partitions.push_back(make_pair(partition_name, output_string));
-				}
+                    partitions.push_back(make_pair(partition_name, output_string));
+                }
 
-				sort(partitions.begin(), partitions.end(), [](const pair<string, string>& a, const pair<string, string>& b) {
-					return a.first < b.first;
-				});
+                sort(partitions.begin(), partitions.end(), [](const pair<string, string>& a, const pair<string, string>& b) {
+                    return a.first < b.first;
+                });
 
-				for (const auto& partition : partitions) {
-					out << partition.second << endl;
-				}
+                for (const auto& partition : partitions) {
+                    out << partition.second << endl;
+                }
             }
         }
+        #endif
 
         bool ok_model = true;
         for (part = 0; part < partitions.size(); part++)
@@ -839,6 +842,7 @@ void SuperAlignment::printBestPartition(const char *filename) {
                 ok_model = false;
                 break;
             }
+
         if (ok_model) {
             ss.str("");
             ss.clear();
@@ -854,8 +858,10 @@ void SuperAlignment::printBestPartition(const char *filename) {
                 else ss << ";";
                 ss << endl;
             }
-
+            
+            #ifdef _IQTREE_MPI
             if (!Params::getInstance().non_mpi_treesearch) {
+            #endif
                 while (ss.eof() == false) {
                     string partition_name;
                     getline(ss, partition_name);
@@ -867,13 +873,13 @@ void SuperAlignment::printBestPartition(const char *filename) {
 
                     out << output_string << endl;
                 }
+            #ifdef _IQTREE_MPI
             } else {
-                int LOG_TAG = 20;
                 if (MPIHelper::getInstance().isWorker()) {
                     string str = ss.str();
-                    MPIHelper::getInstance().sendString(str, 0, LOG_TAG);
+                    MPIHelper::getInstance().sendString(str, PROC_MASTER, LOG_TAG);
                 } else {
-                    for (int i = 1; i < MPIHelper::getInstance().getNumProcesses(); i++) {
+                    for (int i = 1; i < MPIHelper::getInstance().getNumProcesses(); ++i) {
                         string str;
                         MPIHelper::getInstance().recvString(str, i, LOG_TAG);
                         ss << str;
@@ -894,8 +900,7 @@ void SuperAlignment::printBestPartition(const char *filename) {
                         partitions.push_back(make_pair(partition_name, output_string));
                     }
 
-                    sort(partitions.begin(), partitions.end(), [](const pair<string, string>& a, const pair<string, string>& b) {
-                        return a.first < b.first;
+                    sort(partitions.begin(), partitions.end(), [](const pair<string, string>& a, const pair<string, string>& b) { return a.first < b.first;
                     });
 
                     partitions.back().second.pop_back();
@@ -906,6 +911,7 @@ void SuperAlignment::printBestPartition(const char *filename) {
                     }
                 }
             }
+            #endif
         }
         out << "end;" << endl;
         out.close();
@@ -993,7 +999,9 @@ void SuperAlignment::printBestPartitionRaxml(const char *filename) {
             ss << ", " << name << " = " << partitions[part]->position_spec << endl;
         }
         
+        #ifdef _IQTREE_MPI
         if (!Params::getInstance().non_mpi_treesearch) {
+        #endif
             while (ss.eof() == false) {
 				string partition_name;
 				getline(ss, partition_name);
@@ -1005,11 +1013,11 @@ void SuperAlignment::printBestPartitionRaxml(const char *filename) {
 
 				out << output_string << endl;
 			}
+        #ifdef _IQTREE_MPI
         } else {
-            int LOG_TAG = 20;
             if (MPIHelper::getInstance().isWorker()) {
                 string str = ss.str();
-                MPIHelper::getInstance().sendString(str, 0, LOG_TAG);
+                MPIHelper::getInstance().sendString(str, PROC_MASTER, LOG_TAG);
             } else {
                 for (int i = 1; i < MPIHelper::getInstance().getNumProcesses(); i++) {
                     string str;
@@ -1039,6 +1047,7 @@ void SuperAlignment::printBestPartitionRaxml(const char *filename) {
                 }
             }
         }
+        #endif
         out.close();
         cout << "Partition information in Raxml format was printed to " << filename << endl;
     } catch (ios::failure &) {

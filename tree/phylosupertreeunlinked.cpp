@@ -67,7 +67,9 @@ int PhyloSuperTreeUnlinked::computeParsimonyTree(const char *out_prefix, Alignme
                 at(i)->printTree(ss, WT_NEWLINE);
             }
 
+            #ifdef _IQTREE_MPI
             if (!params->non_mpi_treesearch) {
+            #endif
                 while (ss.eof() == false) {
                     string partition_name;
                     getline(ss, partition_name);
@@ -79,13 +81,12 @@ int PhyloSuperTreeUnlinked::computeParsimonyTree(const char *out_prefix, Alignme
 
                     out << output_string << endl;
                 }
+            #ifdef _IQTREE_MPI
             } else {
-                // MPI_Barrier(MPI_COMM_WORLD);
-                int LOG_TAG = 20;
 
                 if (MPIHelper::getInstance().isWorker()) {
                     string str = ss.str();
-                    MPIHelper::getInstance().sendString(str, 0, LOG_TAG);
+                    MPIHelper::getInstance().sendString(str, PROC_MASTER, LOG_TAG);
                 } else {
                     for (int worker = 1; worker < MPIHelper::getInstance().getNumProcesses(); worker++) {
                         string str;
@@ -115,6 +116,7 @@ int PhyloSuperTreeUnlinked::computeParsimonyTree(const char *out_prefix, Alignme
                     }
                 }
             }
+            #endif
 
             out.close();
         } catch (...) {
@@ -235,6 +237,7 @@ void PhyloSuperTreeUnlinked::printResultTree(string suffix) {
         cout << "Best tree printed to " << tree_file_name << endl;
 }
 
+#ifdef _IQTREE_MPI
 void PhyloSuperTreeUnlinked::printResultTreeMPI(string suffix) {
     // if (MPIHelper::getInstance().isWorker()) {
     //     return;
@@ -258,7 +261,7 @@ void PhyloSuperTreeUnlinked::printResultTreeMPI(string suffix) {
     string tree_string = ss.str();
 
     if (MPIHelper::getInstance().isWorker()) {
-        MPIHelper::getInstance().sendString(tree_string, 0, TREE_TAG);
+        MPIHelper::getInstance().sendString(tree_string, PROC_MASTER, TREE_TAG);
     } else {
         vector<pair<string, string> > tree_strings;
         for (int worker = 1; worker < MPIHelper::getInstance().getNumProcesses(); worker++) {
@@ -294,6 +297,7 @@ void PhyloSuperTreeUnlinked::printResultTreeMPI(string suffix) {
     if (verbose_mode >= VB_MED)
         cout << "Best tree printed to " << tree_file_name << endl;
 }
+#endif
 
 double PhyloSuperTreeUnlinked::treeLength(Node *node, Node *dad) {
     double len = 0.0;
@@ -333,18 +337,21 @@ pair<int, int> PhyloSuperTreeUnlinked::doNNISearch(bool write_info) {
 
     setCurScore(score);
 
+    #ifdef _IQTREE_MPI
     if (!params->non_mpi_treesearch) {
+    #endif
         cout << "Log-likelihood: " << score << endl;
+    #ifdef _IQTREE_MPI
     } else {
-        // MPI_Barrier(MPI_COMM_WORLD);
-
         double summary_score = score;
-        MPI_Allreduce(&score, &summary_score, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+        // MPI_Allreduce(&score, &summary_score, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+        sumary_score = MPIHelper::getInstance().sumProcs(summary_score);
 
         if (MPIHelper::getInstance().isMaster()) {
             cout << "Log-likelihood: " << summary_score << endl;
         }
     }
+    #endif
 
     return std::make_pair(NNIs, NNI_steps);
 }
@@ -390,16 +397,15 @@ double PhyloSuperTreeUnlinked::doTreeSearch() {
         delete ckp;
         part_tree->setCheckpoint(getCheckpoint());
     }
-
+    #ifdef _IQTREE_MPI
     if (!params->non_mpi_treesearch) {
+    #endif
         cmust << ss.str();
+    #ifdef _IQTREE_MPI
     } else {
-        // MPI_Barrier(MPI_COMM_WORLD);
-        int LOG_TAG = 20;
-
         if (MPIHelper::getInstance().isWorker()) {
             string str = ss.str();
-            MPIHelper::getInstance().sendString(str, 0, LOG_TAG);
+            MPIHelper::getInstance().sendString(str, PROC_MASTER, LOG_TAG);
         } else {
             string summary = ss.str();
             for (int worker = 1; worker < MPIHelper::getInstance().getNumProcesses(); worker++) {
@@ -412,6 +418,7 @@ double PhyloSuperTreeUnlinked::doTreeSearch() {
             cmust << summary.c_str();
         }
     }
+    #endif
 
     verbose_mode = saved_mode;
     params->suppress_output_flags= saved_flag;
