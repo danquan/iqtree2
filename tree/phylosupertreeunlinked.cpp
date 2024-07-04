@@ -345,7 +345,7 @@ pair<int, int> PhyloSuperTreeUnlinked::doNNISearch(bool write_info) {
     } else {
         double summary_score = score;
         // MPI_Allreduce(&score, &summary_score, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-        sumary_score = MPIHelper::getInstance().sumProcs(summary_score);
+        summary_score = MPIHelper::getInstance().sumProcs(summary_score);
 
         if (MPIHelper::getInstance().isMaster()) {
             cout << "Log-likelihood: " << summary_score << endl;
