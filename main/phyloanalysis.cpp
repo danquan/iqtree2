@@ -1628,6 +1628,7 @@ void reportPhyloAnalysis(Params &params, IQTree &tree, ModelCheckpoint &model_in
                 }
             }
 
+
             reportTree(out, params, tree, tree.getBestScore(), tree.logl_variance, true);
 
             if (tree.isSuperTree() && verbose_mode >= VB_MED) {
@@ -1946,6 +1947,7 @@ void reportPhyloAnalysis(Params &params, IQTree &tree, ModelCheckpoint &model_in
     } catch (ios::failure) {
         outError(ERR_WRITE_OUTPUT, outfile);
     }
+
     
     printOutfilesInfo(params, tree);
 }
@@ -2671,7 +2673,7 @@ void printFinalSearchInfo(Params &params, IQTree &iqtree, double search_cpu_time
                 double total_length = length;
                 for (int i = 1; i < MPIHelper::getInstance().getNumProcesses(); i++) {
                     // MPI_Recv(&length, 1, MPI_DOUBLE, i, LOG_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-                    MPIHelper::getInstance().sendDouble(length, i, LOG_TAG);
+                    MPIHelper::getInstance().recvDouble(length, i, LOG_TAG);
                     total_length += length;
                 }
                 cout << "Total tree length: " << total_length << endl;
@@ -3225,8 +3227,9 @@ void runTreeReconstruction(Params &params, IQTree* &iqtree) {
         ((PhyloSuperTree*) iqtree)->computeBranchLengths();
         ((PhyloSuperTree*) iqtree)->printBestPartitionParams((string(params.out_prefix) + ".best_model.nex").c_str());
     }
+
     
-    #ifdef _IQTREE_MPI
+    #ifdef _IQTREE_MPI  
     if (!params.non_mpi_treesearch) {
     #endif
         cout << "BEST SCORE FOUND : " << iqtree->getCurScore() << endl;
@@ -3234,7 +3237,8 @@ void runTreeReconstruction(Params &params, IQTree* &iqtree) {
     } else {
         double score = iqtree->getCurScore();
         double summary_score = score;
-        MPI_Allreduce(&score, &summary_score, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+        // MPI_Allreduce(&score, &summary_score, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+        summary_score = MPIHelper::getInstance().sumProcs(score);
 
         if (MPIHelper::getInstance().isMaster()) {
             cout << "BEST SCORE FOUND : " << summary_score << endl;
@@ -3376,6 +3380,7 @@ void runTreeReconstruction(Params &params, IQTree* &iqtree) {
     } else { 
         ((PhyloSuperTreeUnlinked*) iqtree)->printResultTreeMPI();
     }
+
     #endif
 
     iqtree->saveCheckpoint();
@@ -4727,9 +4732,10 @@ void runPhyloAnalysis(Params &params, Checkpoint *checkpoint, IQTree *&tree, Ali
                 runMultipleTreeReconstruction(params, tree->aln, tree);
             }
             
+            
             if (params.ancestral_site_concordance)
                 tree->computeAllAncestralSiteConcordance();
-            
+
             reportPhyloAnalysis(params, *tree, *model_info);
 
             // reinsert identical sequences

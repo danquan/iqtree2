@@ -687,7 +687,8 @@ string computeFastMLTree(Params &params, Alignment *aln,
         } else {
             double runtime = getRealTime() - start_time;
             double summary_time = runtime;
-            MPI_Allreduce(&runtime, &summary_time, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+            // MPI_Allreduce(&runtime, &summary_time, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+            summary_time = MPIHelper::getInstance().sumProcs(runtime);
 
             if (MPIHelper::getInstance().isMaster()) {
                 cout << "Time for fast ML tree search: " << summary_time << " seconds" << endl;
@@ -989,9 +990,11 @@ void runModelFinder(Params &params, IQTree &iqtree, ModelCheckpoint &model_info)
     } else {
         double cpu_time_summary = cpu_time;
         double real_time_summary = real_time;
-        MPI_Allreduce(&cpu_time, &cpu_time_summary, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-        MPI_Allreduce(&real_time, &real_time_summary, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-        
+        // MPI_Allreduce(&cpu_time, &cpu_time_summary, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+        // MPI_Allreduce(&real_time, &real_time_summary, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+        cpu_time_summary = MPIHelper::getInstance().sumProcs(cpu_time);
+        real_time_summary = MPIHelper::getInstance().sumProcs(real_time);
+
         if (MPIHelper::getInstance().isMaster()) {
             cout << "CPU time for ModelFinder: " << cpu_time_summary << " seconds (" << convert_time(cpu_time_summary) << ")" << endl;
             cout << "Wall-clock time for ModelFinder: " << real_time_summary << " seconds (" << convert_time(real_time_summary) << ")" << endl;

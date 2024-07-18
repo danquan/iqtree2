@@ -268,9 +268,10 @@ void PhyloSuperTreeUnlinked::printResultTreeMPI(string suffix) {
             // stringstream ss_tmp;
             
             string worker_tree_string;
-            MPIHelper::getInstance().recvString(worker_tree_string, worker, TREE_TAG);
+            int v = MPIHelper::getInstance().recvString(worker_tree_string, worker, TREE_TAG);
             ss << worker_tree_string;
         }
+
 
         while (ss.eof() == false) {
             string partition_name;
