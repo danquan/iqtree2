@@ -1088,7 +1088,8 @@ void SuperAlignment::splitPartitions(Params &params) {
         return pref[partitions.size()] / partitions.size() * 2;
     };
     
-    double partitionCost = computePartitionCost();
+    // double partitionCost = computePartitionCost();
+    double partitionCost = 100 * partitions[0]->getNSeq();
     reverse(partitions.begin(), partitions.end());
     
     const std::string splitDir = string(params.out_prefix) + "/split/";
@@ -1230,6 +1231,57 @@ void SuperAlignment::splitPartitions(Params &params) {
     };
 
     auto findBestModel = [&](Alignment *aln, std::vector<std::vector<int>> sitesOfParts) {
+        auto getQMatrix = [&](std::string filename) {
+            std::ifstream file(filename);
+            std::vector<double> matrix;
+            std::string line, label;
+            
+            while (std::getline(file, line)) {
+                // Skip the lines that do not contain matrix values
+                if (line.find("Q matrix:") != std::string::npos || line.find("State frequencies:") != std::string::npos || line.empty()) {
+                    continue;
+                }
+
+                std::istringstream iss(line);
+                
+                // Read the label (first item in the line)
+                if (!(iss >> label)) {
+                    std::cerr << "Error reading label." << std::endl;
+                    continue;
+                }
+
+                // Read the remaining values
+                double value;
+                while (iss >> value) {
+                    matrix.push_back(value);
+                }
+            }
+
+            file.close();
+
+            return matrix;
+        };
+
+        auto pearsonCorrelation = [&](const std::vector<double>& x, const std::vector<double>& y) {
+            double x_mean = std::accumulate(x.begin(), x.end(), 0.0) / x.size();
+            double y_mean = std::accumulate(y.begin(), y.end(), 0.0) / y.size();
+
+            double covariance = 0.0;
+            double x_sq_sum = 0.0, y_sq_sum = 0.0;
+
+            for (size_t i = 0; i < x.size(); ++i) {
+                double x_diff = x[i] - x_mean;
+                double y_diff = y[i] - y_mean;
+                covariance += x_diff * y_diff;
+                x_sq_sum += x_diff * x_diff;
+                y_sq_sum += y_diff * y_diff;
+            }
+
+            covariance /= x.size();
+            double correlation = covariance / (std::sqrt(x_sq_sum / x.size()) * std::sqrt(y_sq_sum / y.size()));
+
+            return correlation;
+        };
         int n = sitesOfParts.size();
         ofstream out(prefixPath + aln->name + ".partitions");
         out << "#nexus\nbegin sets;\n";
@@ -1305,8 +1357,27 @@ void SuperAlignment::splitPartitions(Params &params) {
                 model = model.substr(0, pos) + model.substr(pos + 4);
             }
         }
-        sort(models.begin(), models.end());
-        models.erase(std::unique(models.begin(), models.end()), models.end());
+        
+        for (int i = 0; i < models.size(); ++i) {
+            if (models[i].empty()) continue;
+            std::vector<double> QMatrix = getQMatrix(prefixPath + aln->name + std::to_string(i + 1) + ".model");
+            for (int j = i + 1; j < models.size(); ++j) {
+                std::vector<double> QMatrix2 = getQMatrix(prefixPath + aln->name + std::to_string(j + 1) + ".model");
+                double correlation = pearsonCorrelation(QMatrix, QMatrix2);
+                printf("%s %s %lf\n", models[i].c_str(), models[j].c_str(), correlation);
+                if (correlation > 0.9995) {
+                    models[j] = "";
+                }
+            }
+        }
+        
+        for (int i = 0; i < models.size(); ++i) {
+            if (models[i].empty()) {
+                models.erase(models.begin() + i);
+                --i;
+            }
+        }
+
         return models;
     };
 
@@ -1372,16 +1443,20 @@ void SuperAlignment::splitPartitions(Params &params) {
             }
         }
         std::swap(sitesOfParts, newSitesOfParts);
-        /*
+        
         printf("Process %d: ", MPIHelper::getInstance().getProcessID());
         for (int i = 0; i < sitesOfParts.size(); ++i) {
             printf("%d ", sitesOfParts[i].size());
         }
         printf("\n");
-        */
+        
         // find best model for each subset
         std::vector<std::string> models = findBestModel(aln, sitesOfParts);
         
+        for (auto &model: models) {
+            printf("%s\n", model.c_str());
+        }
+
         const std::string treefile = prefixPath + aln->name + ".treefile";
         // calculate likelihood for each subset based on the best model
         std::vector<double> lh[(int)models.size()];
@@ -1398,6 +1473,11 @@ void SuperAlignment::splitPartitions(Params &params) {
             int idx = (p.isConst() ? getPartitionIdx(lhs, 1) : getPartitionIdx(lhs, 0));
             sitesOfParts[idx].push_back(i);
         }
+        
+        for (auto part: sitesOfParts) {
+            printf("%d ", part.size());
+        }
+        printf("\n");
 
         std::sort(sitesOfParts.begin(), sitesOfParts.end(), [](const std::vector<int>& a, const std::vector<int>& b) {
             return a.size() > b.size();
@@ -1420,20 +1500,25 @@ void SuperAlignment::splitPartitions(Params &params) {
             }
             sitesOfParts[i].clear();
         }
-        std::cout << "Split into " << sitesOfParts[0].size() << ", " << sitesOfParts[1].size() << ", " << sitesOfParts[2].size() << std::endl;
-
+        printf("Split into ");
+        for (auto part: sitesOfParts) {
+            printf("%d ", part.size());
+        }
+        printf("\n");
+        
         for (int i = 0; i < sitesOfParts.size(); ++i) {
             if (sitesOfParts[i].empty()) continue;
             Alignment* subAln = new Alignment;
             subAln->extractSites(aln, sitesOfParts[i]);
-            aln->printAlignment(IN_PHYLIP, (splitDir + aln->name).c_str());
+            subAln->name = aln->name + "_" + std::to_string(i);
+            subAln->printAlignment(IN_PHYLIP, (splitDir + subAln->name).c_str());
         }
         printf("Process %d: Done %s in %s (of wall-clock time) %s (of CPU time)\n", MPIHelper::getInstance().getProcessID(), aln->name.c_str(), convert_time(getRealTime() - begin_wallclock_time).c_str(), convert_time(getCPUTime() - begin_cpu_time).c_str());
     }
     
     MPIHelper::getInstance().barrier();
     if (MPIHelper::getInstance().isMaster()) {
-        system(("rm -rf " + prefixPath).c_str());
+        // system(("rm -rf " + prefixPath).c_str());
     }
     
     std::cout.rdbuf(cout_buffer);
