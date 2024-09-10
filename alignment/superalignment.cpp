@@ -1088,8 +1088,7 @@ void SuperAlignment::splitPartitions(Params &params) {
         return pref[partitions.size()] / partitions.size() * 2;
     };
     
-    // double partitionCost = computePartitionCost();
-    double partitionCost = 100 * partitions[0]->getNSeq();
+    double partitionCost = computePartitionCost();
     reverse(partitions.begin(), partitions.end());
     
     const std::string splitDir = string(params.out_prefix) + "/split/";
@@ -1160,6 +1159,48 @@ void SuperAlignment::splitPartitions(Params &params) {
         }
         for (int i = 0; i < aln->getNSite(); ++i)
             rates.push_back(ratePatterns[aln->getPatternID(i)]);
+        return rates;
+    };
+
+    auto calcRateFast = [&](Alignment* aln) {
+        vector<int> hammingPairs(aln->getNSeq(), 0);
+
+        for (int i = 0; i < aln->size(); ++i) {
+            Pattern p = aln->at(i);
+            if (p.isConst()) continue;
+            for (int j = 0; j < aln->getNSeq(); ++j) {
+                for (int k = j + 1; k < aln->getNSeq(); ++k) {
+                    if (p[j] == p[k]) ++hammingPairs[j];
+                }
+            }
+        }
+
+        long long sum = 0;
+        for (int i = 0; i < aln->getNSeq(); ++i) {
+            sum += hammingPairs[i];
+        }
+
+        vector<double> ratePatterns(aln->size());
+        for (int i = 0; i < aln->size(); ++i) {
+            if (aln->at(i).isConst()) {
+                ratePatterns[i] = 1.0;
+                continue;
+            }
+
+            for (int j = 0; j < aln->getNSeq(); ++j) 
+                for (int k = j + 1; k < aln->getNSeq(); ++k) 
+                    if (aln->at(i)[j] == aln->at(i)[k]) ratePatterns[i] += 1.0 / hammingPairs[j];
+        }
+
+        for (int i = 0; i < aln->size(); ++i) {
+            ratePatterns[i] /= sum;
+        }
+
+        vector<double> rates;
+        for (int i = 0; i < aln->getNSite(); ++i) {
+            rates.push_back(ratePatterns[aln->getPatternID(i)]);
+        }
+
         return rates;
     };
 
@@ -1399,8 +1440,8 @@ void SuperAlignment::splitPartitions(Params &params) {
     
         const int numSubsets = ceil(1.0 * aln->getNPattern() * aln->getNSeq() / partitionCost);
 
-        // calculate rates by TIGER
-        std::vector<double> rates = calcRate(aln);
+        // calculate rates by fast TIGER
+        std::vector<double> rates = calcRateFast(aln);
         
         double maxRate = *max_element(rates.begin(), rates.end());
         double minRate = *min_element(rates.begin(), rates.end());
