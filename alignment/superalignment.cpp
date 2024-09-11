@@ -1067,7 +1067,7 @@ void SuperAlignment::splitPartitions(Params &params) {
     const int BOUND_LEN = 50;
 
     sort(partitions.begin(), partitions.end(), [](Alignment *a, Alignment *b) {
-        return a->getNPattern() * a->getNSeq() < b->getNPattern() * b->getNSeq();
+        return a->getNSite() * a->getNSeq() < b->getNSite() * b->getNSeq();
     });
     auto computePartitionCost = [&]() {
         vector<double> pref(partitions.size() + 1);
@@ -1075,10 +1075,10 @@ void SuperAlignment::splitPartitions(Params &params) {
         pref[0] = 0;
         suff[partitions.size()] = 0;
         for (int i = 1; i <= partitions.size(); ++i) {
-            pref[i] = pref[i-1] + partitions[i-1]->getNPattern() * partitions[i-1]->getNSeq();
+            pref[i] = pref[i-1] + partitions[i-1]->getNSite() * partitions[i-1]->getNSeq();
         }
         for (int i = partitions.size() - 1; i >= 0; --i) {
-            suff[i] = suff[i+1] + partitions[i]->getNPattern() * partitions[i]->getNSeq();
+            suff[i] = suff[i+1] + partitions[i]->getNSite() * partitions[i]->getNSeq();
         }
         for (int i = partitions.size(); i >= 1; --i) {
             if (suff[i] / (partitions.size() - i) <= 2 * pref[i] / i) {
@@ -1104,64 +1104,7 @@ void SuperAlignment::splitPartitions(Params &params) {
         }
         system(("mkdir " + splitDir).c_str());
     }
-     
-    auto calcRate = [&](Alignment* aln) {
-        vector<double> rates;
-        vector<vector<vector<int>>> sequences(aln->getNSite());
-        for (int i = 0; i < aln->size(); ++i) {
-            Pattern p = aln->at(i);
-            if (p.isConst()) continue;
-            unordered_map<StateType, vector<int>> states;
-            for (int j = 0; j < p.size(); ++j) {
-                states[p[j]].push_back(j);
-            }
-            
-            for (auto it = states.begin(); it != states.end(); ++it)
-                sequences[i].push_back(it->second);
-        }
-        vector<double> ratePatterns(aln->size());
-        
-        for (int i = 0; i < aln->size(); ++i) {
-            if (aln->at(i).isConst()) {
-                ratePatterns[i] = 1.0;
-                continue;
-            }
-            vector<int> inSeq(aln->getNSeq());
-            for (int j = 0; j < sequences[i].size(); ++j) {
-                for (auto x : sequences[i][j]) {
-                    inSeq[x] = j;
-                }
-            }
-
-            int totalCount = 0;
-            double score = 0;
-            for (int j = 0; j < aln->size(); ++j) {
-                if (aln->at(j).isConst()) continue;
-                int cnt = 0;
-                totalCount += aln->at(j).frequency;
-                for (auto seq2 : sequences[j]) {
-                    int idx = inSeq[seq2[0]];
-                    auto seq = sequences[i][idx];
-                    bool found = true;
-                    for (int x = 0, y = 0; x < seq2.size(); ++x) {
-                        while (y < seq.size() && seq[y] != seq2[x]) ++y;
-                        if (y == seq.size()) {
-                            found = false;
-                            break;
-                        }
-                        ++y;
-                    }
-                    if (found) ++cnt;
-                }
-                score += 1.0 * cnt / sequences[j].size() * aln->at(j).frequency;
-            }
-            ratePatterns[i] = score / totalCount;
-        }
-        for (int i = 0; i < aln->getNSite(); ++i)
-            rates.push_back(ratePatterns[aln->getPatternID(i)]);
-        return rates;
-    };
-
+    
     auto calcRateFast = [&](Alignment* aln) {
         vector<int> hammingPairs(aln->getNSeq(), 0);
 
@@ -1279,8 +1222,12 @@ void SuperAlignment::splitPartitions(Params &params) {
             
             while (std::getline(file, line)) {
                 // Skip the lines that do not contain matrix values
-                if (line.find("Q matrix:") != std::string::npos || line.find("State frequencies:") != std::string::npos || line.empty()) {
+                if (line.find("Q matrix:") != std::string::npos || line.empty()) {
                     continue;
+                }
+
+                if (line.find("State frequencies:") != std::string::npos) {
+                    break;
                 }
 
                 std::istringstream iss(line);
@@ -1337,7 +1284,7 @@ void SuperAlignment::splitPartitions(Params &params) {
         out << "end;\n";
         out.close();
         aln->printAlignment(IN_PHYLIP, (prefixPath + aln->name).c_str());
-        std::cout << "Finding the best model for " << aln->name << "..." << std::endl;
+        // std::cout << "Finding the best model for " << aln->name << "..." << std::endl;
         
         std::string arg_s = prefixPath + aln->name;
         std::string arg_prefix = prefixPath + aln->name;
@@ -1427,18 +1374,20 @@ void SuperAlignment::splitPartitions(Params &params) {
     while (true) {
         int id = MPIHelper::getInstance().incrementSharedCounter(0);
         if (id >= partitions.size()) break;
+
+        printf("Process %d: Start %s\n", MPIHelper::getInstance().getProcessID(), partitions[id]->name.c_str());
         Alignment *aln = partitions[id];
 
         double begin_wallclock_time = getRealTime();
         double begin_cpu_time = getCPUTime();
 
-        if (aln->getNPattern() * aln->getNSeq() <= partitionCost) {
+        if (aln->getNSite() * aln->getNSeq() <= partitionCost || aln->getNSite() < 100) {
             aln->printAlignment(IN_PHYLIP, (splitDir + aln->name).c_str());
             printf("Process %d: Done %s in %s (of wall-clock time) %s (of CPU time)\n", MPIHelper::getInstance().getProcessID(), aln->name.c_str(), convert_time(getRealTime() - begin_wallclock_time).c_str(), convert_time(getCPUTime() - begin_cpu_time).c_str());
             continue;
         }
     
-        const int numSubsets = ceil(1.0 * aln->getNPattern() * aln->getNSeq() / partitionCost);
+        const int numSubsets = ceil(1.0 * aln->getNSite() * aln->getNSeq() / partitionCost);
 
         // calculate rates by fast TIGER
         std::vector<double> rates = calcRateFast(aln);
@@ -1514,11 +1463,6 @@ void SuperAlignment::splitPartitions(Params &params) {
             int idx = (p.isConst() ? getPartitionIdx(lhs, 1) : getPartitionIdx(lhs, 0));
             sitesOfParts[idx].push_back(i);
         }
-        
-        for (auto part: sitesOfParts) {
-            printf("%d ", part.size());
-        }
-        printf("\n");
 
         std::sort(sitesOfParts.begin(), sitesOfParts.end(), [](const std::vector<int>& a, const std::vector<int>& b) {
             return a.size() > b.size();
