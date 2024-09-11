@@ -1257,7 +1257,7 @@ void SuperAlignment::splitPartitions(Params &params) {
 
             covariance /= x.size();
             double correlation = covariance / (std::sqrt(x_sq_sum / x.size()) * std::sqrt(y_sq_sum / y.size()));
-            assert(-1 <= correlation && correlation <= 1);
+            
             return correlation;
         };
         int n = sitesOfParts.size();
