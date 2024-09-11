@@ -1225,6 +1225,7 @@ void SuperAlignment::splitPartitions(Params &params) {
                     break;
                 }
             }
+            std::getline(file, line); // skip the empty line
             for (int i = 0; i < 20; ++i) {
                 std::getline(file, line);
                 std::istringstream iss(line);
@@ -1371,7 +1372,7 @@ void SuperAlignment::splitPartitions(Params &params) {
         double begin_wallclock_time = getRealTime();
         double begin_cpu_time = getCPUTime();
 
-        if (aln->getNSite() < 100 || aln->getNSeq() * aln->getNSite() <= partitionCost) {
+        if (aln->getNSite() < 100) {
             aln->printAlignment(IN_PHYLIP, (splitDir + aln->name).c_str());
             printf("Process %d: Done %s in %s (of wall-clock time) %s (of CPU time)\n", MPIHelper::getInstance().getProcessID(), aln->name.c_str(), convert_time(getRealTime() - begin_wallclock_time).c_str(), convert_time(getCPUTime() - begin_cpu_time).c_str());
             continue;
