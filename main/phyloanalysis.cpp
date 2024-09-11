@@ -401,14 +401,12 @@ void reportModel(ostream &out, Alignment *aln, ModelSubst *m) {
         out << endl;
         out.unsetf(ios_base::fixed);
     } else if (m->num_states == 20) {
-        out << "Q matrix:" << endl << endl;
-        for (i = 0, k = 0; i < m->num_states; i++) {
-            out << "  " << aln->convertStateBackStr(i);
-            for (j = 0; j < m->num_states; j++, k++) {
-                out << "  ";
-                out.width(8);
-                out << rate_mat[k];
-            }
+        double full_mat[400];
+        m->getQMatrix(full_mat);
+        out << "Full Q matrix and state frequencies (can be used as input for IQ-TREE): " << endl << endl;
+        for (i = 0; i < m->num_states; i++) {
+            for (j = 0; j < m->num_states; j++)
+                out << " " << full_mat[i*m->num_states+j];
             out << endl;
         }
     } else if (aln->seq_type == SEQ_PROTEIN && m->getNDim() > 20) {

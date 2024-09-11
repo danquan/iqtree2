@@ -1221,24 +1221,13 @@ void SuperAlignment::splitPartitions(Params &params) {
             std::string line, label;
             
             while (std::getline(file, line)) {
-                // Skip the lines that do not contain matrix values
-                if (line.find("Q matrix:") != std::string::npos || line.empty()) {
-                    continue;
-                }
-
-                if (line.find("State frequencies:") != std::string::npos) {
+                if (line.find("Full Q matrix and state frequencies (can be used as input for IQ-TREE): ") != std::string::npos) {
                     break;
                 }
-
+            }
+            for (int i = 0; i < 20; ++i) {
+                std::getline(file, line);
                 std::istringstream iss(line);
-                
-                // Read the label (first item in the line)
-                if (!(iss >> label)) {
-                    std::cerr << "Error reading label." << std::endl;
-                    continue;
-                }
-
-                // Read the remaining values
                 double value;
                 while (iss >> value) {
                     matrix.push_back(value);
@@ -1246,7 +1235,7 @@ void SuperAlignment::splitPartitions(Params &params) {
             }
 
             file.close();
-
+            assert(matrix.size() == 400);
             return matrix;
         };
 
@@ -1267,7 +1256,7 @@ void SuperAlignment::splitPartitions(Params &params) {
 
             covariance /= x.size();
             double correlation = covariance / (std::sqrt(x_sq_sum / x.size()) * std::sqrt(y_sq_sum / y.size()));
-
+            assert(-1 <= correlation && correlation <= 1);
             return correlation;
         };
         int n = sitesOfParts.size();
@@ -1365,7 +1354,8 @@ void SuperAlignment::splitPartitions(Params &params) {
                 --i;
             }
         }
-
+        sort(models.begin(), models.end());
+        models.erase(unique(models.begin(), models.end()), models.end());
         return models;
     };
 
@@ -1381,14 +1371,14 @@ void SuperAlignment::splitPartitions(Params &params) {
         double begin_wallclock_time = getRealTime();
         double begin_cpu_time = getCPUTime();
 
-        if (aln->getNSite() * aln->getNSeq() <= partitionCost || aln->getNSite() < 100) {
+        if (aln->getNSite() < 100 || aln->getNSeq() * aln->getNSite() <= partitionCost) {
             aln->printAlignment(IN_PHYLIP, (splitDir + aln->name).c_str());
             printf("Process %d: Done %s in %s (of wall-clock time) %s (of CPU time)\n", MPIHelper::getInstance().getProcessID(), aln->name.c_str(), convert_time(getRealTime() - begin_wallclock_time).c_str(), convert_time(getCPUTime() - begin_cpu_time).c_str());
             continue;
         }
     
-        const int numSubsets = ceil(1.0 * aln->getNSite() * aln->getNSeq() / partitionCost);
-
+        const int numSubsets = ceil(aln->getNSite() / 100); //ceil(1.0 * aln->getNSite() * aln->getNSeq() / partitionCost);
+        
         // calculate rates by fast TIGER
         std::vector<double> rates = calcRateFast(aln);
         
