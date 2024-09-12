@@ -1105,45 +1105,60 @@ void SuperAlignment::splitPartitions(Params &params) {
         system(("mkdir " + splitDir).c_str());
     }
     
-    auto calcRateFast = [&](Alignment* aln) {
-        vector<int> hammingPairs(aln->getNSeq(), 0);
-
+    auto calcRate = [&](Alignment* aln) {
+        vector<double> rates;
+        vector<vector<vector<int>>> sequences(aln->getNSite());
         for (int i = 0; i < aln->size(); ++i) {
             Pattern p = aln->at(i);
             if (p.isConst()) continue;
-            for (int j = 0; j < aln->getNSeq(); ++j) {
-                for (int k = j + 1; k < aln->getNSeq(); ++k) {
-                    if (p[j] == p[k]) ++hammingPairs[j];
-                }
+            unordered_map<StateType, vector<int>> states;
+            for (int j = 0; j < p.size(); ++j) {
+                states[p[j]].push_back(j);
             }
-        }
 
-        long long sum = 0;
-        for (int i = 0; i < aln->getNSeq(); ++i) {
-            sum += hammingPairs[i];
+            for (auto it = states.begin(); it != states.end(); ++it)
+                sequences[i].push_back(it->second);
         }
-
         vector<double> ratePatterns(aln->size());
+
         for (int i = 0; i < aln->size(); ++i) {
             if (aln->at(i).isConst()) {
                 ratePatterns[i] = 1.0;
                 continue;
             }
+            vector<int> inSeq(aln->getNSeq());
+            for (int j = 0; j < sequences[i].size(); ++j) {
+                for (auto x : sequences[i][j]) {
+                    inSeq[x] = j;
+                }
+            }
 
-            for (int j = 0; j < aln->getNSeq(); ++j) 
-                for (int k = j + 1; k < aln->getNSeq(); ++k) 
-                    if (aln->at(i)[j] == aln->at(i)[k]) ratePatterns[i] += 1.0 / hammingPairs[j];
+            int totalCount = 0;
+            double score = 0;
+            for (int j = 0; j < aln->size(); ++j) {
+                if (aln->at(j).isConst()) continue;
+                int cnt = 0;
+                totalCount += aln->at(j).frequency;
+                for (auto seq2 : sequences[j]) {
+                    int idx = inSeq[seq2[0]];
+                    auto seq = sequences[i][idx];
+                    bool found = true;
+                    for (int x = 0, y = 0; x < seq2.size(); ++x) {
+                        while (y < seq.size() && seq[y] != seq2[x]) ++y;
+                        if (y == seq.size()) {
+                            found = false;
+                            break;
+                        }
+                        ++y;
+                    }
+                    if (found) ++cnt;
+                }
+                score += 1.0 * cnt / sequences[j].size() * aln->at(j).frequency;
+            }
+            ratePatterns[i] = score / totalCount;
         }
-
-        for (int i = 0; i < aln->size(); ++i) {
-            ratePatterns[i] /= sum;
-        }
-
-        vector<double> rates;
-        for (int i = 0; i < aln->getNSite(); ++i) {
+        for (int i = 0; i < aln->getNSite(); ++i)
             rates.push_back(ratePatterns[aln->getPatternID(i)]);
-        }
-
         return rates;
     };
 
@@ -1340,6 +1355,7 @@ void SuperAlignment::splitPartitions(Params &params) {
             if (models[i].empty()) continue;
             std::vector<double> QMatrix = getQMatrix(prefixPath + aln->name + std::to_string(i + 1) + ".model");
             for (int j = i + 1; j < models.size(); ++j) {
+                if (models[j].empty()) continue;
                 std::vector<double> QMatrix2 = getQMatrix(prefixPath + aln->name + std::to_string(j + 1) + ".model");
                 double correlation = pearsonCorrelation(QMatrix, QMatrix2);
                 printf("%s %s %lf\n", models[i].c_str(), models[j].c_str(), correlation);
@@ -1378,10 +1394,10 @@ void SuperAlignment::splitPartitions(Params &params) {
             continue;
         }
     
-        const int numSubsets = ceil(aln->getNSite() / 100); //ceil(1.0 * aln->getNSite() * aln->getNSeq() / partitionCost);
+        const int numSubsets = ceil(aln->getNSite() / 100); 
         
         // calculate rates by fast TIGER
-        std::vector<double> rates = calcRateFast(aln);
+        std::vector<double> rates = calcRate(aln);
         
         double maxRate = *max_element(rates.begin(), rates.end());
         double minRate = *min_element(rates.begin(), rates.end());
