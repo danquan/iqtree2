@@ -1350,7 +1350,7 @@ void SuperAlignment::splitPartitions(Params &params) {
                 model = model.substr(0, pos) + model.substr(pos + 4);
             }
         }
-        
+        /*
         for (int i = 0; i < models.size(); ++i) {
             if (models[i].empty()) continue;
             std::vector<double> QMatrix = getQMatrix(prefixPath + aln->name + std::to_string(i + 1) + ".model");
@@ -1371,6 +1371,7 @@ void SuperAlignment::splitPartitions(Params &params) {
                 --i;
             }
         }
+        */
         sort(models.begin(), models.end());
         models.erase(unique(models.begin(), models.end()), models.end());
         return models;
@@ -1388,7 +1389,7 @@ void SuperAlignment::splitPartitions(Params &params) {
         double begin_wallclock_time = getRealTime();
         double begin_cpu_time = getCPUTime();
 
-        if (aln->getNSite() < 100) {
+        if (aln->getNSite() <= 100 || aln->getNSeq() * aln->getNPattern() < partitionCost) {
             aln->printAlignment(IN_PHYLIP, (splitDir + aln->name).c_str());
             printf("Process %d: Done %s in %s (of wall-clock time) %s (of CPU time)\n", MPIHelper::getInstance().getProcessID(), aln->name.c_str(), convert_time(getRealTime() - begin_wallclock_time).c_str(), convert_time(getCPUTime() - begin_cpu_time).c_str());
             continue;
@@ -1441,6 +1442,12 @@ void SuperAlignment::splitPartitions(Params &params) {
         }
         std::swap(sitesOfParts, newSitesOfParts);
         
+        if (sitesOfParts.size() == 1) {
+            aln->printAlignment(IN_PHYLIP, (splitDir + aln->name).c_str());
+            printf("Process %d: Done %s in %s (of wall-clock time) %s (of CPU time)\n", MPIHelper::getInstance().getProcessID(), aln->name.c_str(), convert_time(getRealTime() - begin_wallclock_time).c_str(), convert_time(getCPUTime() - begin_cpu_time).c_str());
+            continue;
+        }
+
         printf("Process %d: ", MPIHelper::getInstance().getProcessID());
         for (int i = 0; i < sitesOfParts.size(); ++i) {
             printf("%d ", sitesOfParts[i].size());
