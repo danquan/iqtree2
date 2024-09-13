@@ -1169,7 +1169,7 @@ void SuperAlignment::splitPartitions(Params &params) {
             double minLH = *std::min_element(lh.begin(), lh.end());
             vector<double> eps;
             for (int i = 0; i < lh.size(); ++i) {
-                if (lh[i] == - 1e9) eps.push_back(0);
+                if (lh[i] == 1e9) eps.push_back(0);
                 else eps.push_back(exp(lh[i] - minLH));
             }
             double total = std::accumulate(eps.begin(), eps.end(), 0.0);
@@ -1447,12 +1447,6 @@ void SuperAlignment::splitPartitions(Params &params) {
             printf("Process %d: Done %s in %s (of wall-clock time) %s (of CPU time)\n", MPIHelper::getInstance().getProcessID(), aln->name.c_str(), convert_time(getRealTime() - begin_wallclock_time).c_str(), convert_time(getCPUTime() - begin_cpu_time).c_str());
             continue;
         }
-
-        printf("Process %d: ", MPIHelper::getInstance().getProcessID());
-        for (int i = 0; i < sitesOfParts.size(); ++i) {
-            printf("%d ", sitesOfParts[i].size());
-        }
-        printf("\n");
         
         // find best model for each subset
         std::vector<std::string> models = findBestModel(aln, sitesOfParts);
@@ -1478,6 +1472,12 @@ void SuperAlignment::splitPartitions(Params &params) {
             sitesOfParts[idx].push_back(i);
         }
 
+        printf("Process %d: ", MPIHelper::getInstance().getProcessID());
+        for (int i = 0; i < sitesOfParts.size(); ++i) {
+            printf("%d ", sitesOfParts[i].size());
+        }
+        printf("\n");
+
         std::sort(sitesOfParts.begin(), sitesOfParts.end(), [](const std::vector<int>& a, const std::vector<int>& b) {
             return a.size() > b.size();
         });
@@ -1488,7 +1488,7 @@ void SuperAlignment::splitPartitions(Params &params) {
                 vector<double> lhs;
                 for (int j = 0; j < sitesOfParts.size(); ++j) {
                     if (j == i || sitesOfParts[j].empty()) {
-                        lhs.push_back(- 1e9);
+                        lhs.push_back(1e9);
                         continue;
                     }
                     lhs.push_back(lh[j][x]);
