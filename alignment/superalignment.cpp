@@ -1166,10 +1166,13 @@ void SuperAlignment::splitPartitions(Params &params) {
         if (stg == 0) { // assign to best likelihood subset
             return (int)(std::max_element(lh.begin(), lh.end()) - lh.begin());
         } else { // assign to subset based on probability distribution
-            double minLH = *std::min_element(lh.begin(), lh.end());
+            double minLH = 1e9;
+            for (int i = 0; i < lh.size(); ++i) {
+                if (lh[i] != -1e9 && lh[i] < minLH) minLH = lh[i];
+            }
             vector<double> eps;
             for (int i = 0; i < lh.size(); ++i) {
-                if (lh[i] == 1e9) eps.push_back(0);
+                if (lh[i] == - 1e9) eps.push_back(0);
                 else eps.push_back(exp(lh[i] - minLH));
             }
             double total = std::accumulate(eps.begin(), eps.end(), 0.0);
@@ -1488,7 +1491,7 @@ void SuperAlignment::splitPartitions(Params &params) {
                 vector<double> lhs;
                 for (int j = 0; j < sitesOfParts.size(); ++j) {
                     if (j == i || sitesOfParts[j].empty()) {
-                        lhs.push_back(1e9);
+                        lhs.push_back(- 1e9);
                         continue;
                     }
                     lhs.push_back(lh[j][x]);
