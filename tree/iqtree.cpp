@@ -2290,7 +2290,7 @@ double IQTree::doTreeSearch() {
     stop_rule.getUFBootCountCheck(ufboot_count, ufboot_count_check);
 
     while (!stop_rule.meetStopCondition(stop_rule.getCurIt(), cur_correlation)) {
-
+        numSynchronizedWorker = 1;
         searchinfo.curIter = stop_rule.getCurIt();
         // estimate logl_cutoff for bootstrap
         if (!boot_orig_logl.empty())
@@ -2321,9 +2321,12 @@ double IQTree::doTreeSearch() {
         if (pos != -2 && pos != -1 && (Params::getInstance().fixStableSplits || Params::getInstance().adaptPertubation))
             candidateTrees.computeSplitOccurences(Params::getInstance().stableSplitThreshold);
 
-        if (MPIHelper::getInstance().isWorker() || MPIHelper::getInstance().gotMessage())
+        if (MPIHelper::getInstance().isWorker())
             syncCurrentTree();
-
+        else { 
+            while (numSynchronizedWorker != 0)
+                syncCurrentTree();
+        }
 
         // TODO: cannot check yet, need to somehow return treechanged
 //        if (nni_count == 0 && params->snni && numPerturb > 0 && treechanged) {
@@ -4430,7 +4433,7 @@ void IQTree::syncCurrentTree() {
 
         checkpoint->clear();
         
-        if (++numSynchronizedWorker == MPIHelper::getInstance().getNumProcesses() - 1) {
+        if (++numSynchronizedWorker == MPIHelper::getInstance().getNumProcesses()) {
             // send candidate trees to all worker after receiving from all
             cout << "Master sends trees to all workers" << endl;
             if (boot_samples.size() > 0)
