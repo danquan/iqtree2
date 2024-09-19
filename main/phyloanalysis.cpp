@@ -400,15 +400,6 @@ void reportModel(ostream &out, Alignment *aln, ModelSubst *m) {
         //if (tree.aln->num_states > 4)
         out << endl;
         out.unsetf(ios_base::fixed);
-    } else if (m->num_states == 20) {
-        double full_mat[400];
-        m->getQMatrix(full_mat);
-        out << "Full Q matrix and state frequencies (can be used as input for IQ-TREE): " << endl << endl;
-        for (i = 0; i < m->num_states; i++) {
-            for (j = 0; j < m->num_states; j++)
-                out << " " << full_mat[i*m->num_states+j];
-            out << endl;
-        }
     } else if (aln->seq_type == SEQ_PROTEIN && m->getNDim() > 20) {
         ASSERT(m->num_states == 20);
         out << "WARNING: This model has " << m->getNDim() + m->getNDimFreq() << " parameters that may be overfitting. Please use with caution!" << endl << endl;
@@ -1258,12 +1249,6 @@ void reportSubstitutionProcess(ostream &out, Params &params, IQTree &tree)
             string model_file = params.out_prefix;
             model_file += to_string(part+1);
             model_file += ".model";
-
-            ofstream model_out;
-            model_out.exceptions(ios::failbit | ios::badbit);
-            model_out.open(model_file.c_str());
-            model_out << "Partition " << part+1 << " model: " << (*it)->getModelName() << endl << endl;
-            reportModel(model_out, (*it)->aln, (*it)->getModel());
         }
 
         #ifdef _IQTREE_MPI
