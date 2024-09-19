@@ -54,7 +54,7 @@ public:
         load partitions from program Params
         @param params program Params
      */
-    void readFromParams(Params &params);
+    void readFromParams(Params &params, bool canSplit = true);
     
     /**
      initialize seq_names, taxon_index, buildPattern
@@ -86,6 +86,8 @@ public:
     
     void printBestPartition(const char *filename);
     void printBestPartitionRaxml(const char *filename);
+
+    void splitPartitions(Params &params);
 
 	/**
 	 * create taxa_index from super-alignment to sub-alignment
