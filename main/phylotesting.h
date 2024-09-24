@@ -12,6 +12,7 @@
 #include "utils/checkpoint.h"
 #include "nclextra/modelsblock.h"
 #include "alignment/superalignment.h"
+#include "../utils/MPIHelper.h"
 
 class PhyloTree;
 class IQTree;
@@ -146,13 +147,30 @@ public:
     
     /** turn on some flag with OR operator */
     void setFlag(int flag) {
+        if (Params::getInstance().mpi_by_model) {
+            MPIHelper::getInstance().models->lock();
+            int val = MPIHelper::getInstance().models->get_shared_memory(idx);
+            MPIHelper::getInstance().models->set_shared_memory(idx, val | flag);
+            MPIHelper::getInstance().models->unlock();
+            return;
+        }
         this->flag |= flag;
     }
 
     bool hasFlag(int flag) {
+        if (Params::getInstance().mpi_by_model) {
+            MPIHelper::getInstance().models->lock();
+            int val = MPIHelper::getInstance().models->get_shared_memory(idx);
+            MPIHelper::getInstance().models->unlock();
+            return (val & flag) != 0;
+        }
         return (this->flag & flag) != 0;
     }
     
+    int getFlag() {
+        return flag;
+    }
+
     string set_name; // subset name
     string subst_name; // substitution matrix name
     string orig_subst_name; // original substitution name
@@ -168,6 +186,7 @@ public:
 
     Alignment *aln; // associated alignment
     
+    int idx;
 protected:
     
     /** flag */
@@ -274,6 +293,9 @@ public:
     /** get the next model to evaluate in parallel */
     int64_t getNextModel();
 
+    /** get the next model to evaluate (MPI) */
+    int64_t getNextModelMPI();
+
     /**
      evaluate all models in parallel
      */
@@ -281,6 +303,16 @@ public:
                      ModelsBlock *models_block, int num_threads, int brlen_type,
                      string in_model_name = "", bool merge_phase = false, bool write_info = true);
     
+
+    /**
+     evaluate all models in parallel by MPI
+     */
+    CandidateModel evaluateMPI(Params &params, PhyloTree* in_tree, ModelCheckpoint &model_info,
+                     ModelsBlock *models_block, int num_threads, int brlen_type,
+                     string in_model_name = "", bool merge_phase = false, bool write_info = true);
+    
+    double getScore(int idx);
+
 private:
     
     /** current model */

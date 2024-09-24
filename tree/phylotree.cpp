@@ -2673,6 +2673,7 @@ void PhyloTree::optimizeAllBranchesLS(PhyloNode *node, PhyloNode *dad) {
 }
 
 void PhyloTree::optimizeAllBranches(PhyloNode *node, PhyloNode *dad, int maxNRStep) {
+    std::cout << "ALO\n";
     if (!node) {
         node = (PhyloNode*)root;
     }

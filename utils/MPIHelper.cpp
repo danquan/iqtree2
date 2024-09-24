@@ -34,111 +34,8 @@ void MPIHelper::init(int argc, char *argv[]) {
 #endif
 }
 
-void MPIHelper::initSharedMemory() {
-#ifdef _IQTREE_MPI
-    if (Params::getInstance().split) {
-        if (getNumProcesses() > 1) {
-            MPI_Win_allocate(sizeof(int) * 3, sizeof(int), MPI_INFO_NULL, MPI_COMM_WORLD, &shared_counter, &shmwin);
-            if (isMaster()) {
-                shared_counter[0] = 0;
-                shared_counter[1] = 0;
-                shared_counter[2] = 0;
-            }
-        } else {
-            shared_counter = new int[3];
-            shared_counter[0] = 0;
-            shared_counter[1] = 0;
-            shared_counter[2] = 0;
-        }
-    }
-    barrier();
-#endif
-}
-
-int MPIHelper::incrementSharedCounter(int id) {
-#ifdef _IQTREE_MPI
-    if (getNumProcesses() > 1) {
-        int one = 1, ret;
-        lock();
-        MPI_Fetch_and_op(&one, &ret, MPI_INT, 0, id, MPI_SUM, shmwin);
-        unlock();
-        return ret;
-    } else {
-        return shared_counter[id]++;
-    }
-#endif
-}
-
-int MPIHelper::decrementSharedCounter(int id) {
-#ifdef _IQTREE_MPI
-    if (getNumProcesses() > 1) {
-        int minus_one = -1, ret;
-        lock();
-        MPI_Fetch_and_op(&minus_one, &ret, MPI_INT, 0, id, MPI_SUM, shmwin);
-        unlock();
-        return ret;
-    } else {
-        return shared_counter[id]--;
-    }
-#else
-    outError("MPI is not enabled, please do not use MPI RMA!");
-#endif
-}
-
-void MPIHelper::lock() {
-#ifdef _IQTREE_MPI
-    if (getNumProcesses() > 1) {
-        if (lockCounter == 0) {
-            MPI_Win_lock(MPI_LOCK_EXCLUSIVE, 0, 0, shmwin);
-        }
-        lockCounter++;
-    }
-#endif
-}
-
-
-void MPIHelper::unlock() {
-#ifdef _IQTREE_MPI
-    if (getNumProcesses() > 1) {
-        lockCounter--;
-        if (lockCounter == 0) {
-            MPI_Win_unlock(0, shmwin);
-        }
-    }
-#endif
-}
-
-void MPIHelper::setSharedCounter(int value, int id) {
-#ifdef _IQTREE_MPI
-    if (getNumProcesses() == 1) {
-        shared_counter[id] = value;
-        return;
-    }
-    lock();
-    MPI_Put(&value, 1, MPI_INT, 0, id, 1, MPI_INT, shmwin);
-    unlock();
-#else
-    outError("MPI is not enabled, please do not use MPI RMA!");
-#endif
-}
-
-int MPIHelper::getSharedCounter(int id) {
-#ifdef _IQTREE_MPI
-    if (getNumProcesses() > 1) {
-        int ret;
-        lock();
-        MPI_Get(&ret, 1, MPI_INT, 0, id, 1, MPI_INT, shmwin);
-        unlock();
-        return ret;
-    } else return shared_counter[id];
-#endif
-}
-
 void MPIHelper::finalize() {
 #ifdef _IQTREE_MPI
-    if (Params::getInstance().split)
-        if (getNumProcesses() > 1)
-            MPI_Win_free(&shmwin);
     MPI_Finalize();
 #endif
 }
@@ -421,6 +318,49 @@ vector<DoubleVector> MPIHelper::gatherAllVectors(const vector<DoubleVector> &vts
     }
 
     return res_vts;
+}
+
+MPI_SharedWindow::MPI_SharedWindow(int num_elements)
+    : window(MPI_WIN_NULL), shared_memory(nullptr), num_elements(num_elements) {
+    MPI_Info win_info;
+    MPI_Info_create(&win_info);
+
+    // Create shared memory window for all processes
+    MPI_Win_allocate_shared(MPIHelper::getInstance().isMaster() ? sizeof(int) * num_elements : 0, sizeof(int), win_info, MPI_COMM_WORLD, &shared_memory, &window);
+    MPI_Info_free(&win_info);
+
+    // Map shared memory for other processes
+    if (MPIHelper::getInstance().isWorker()) {
+        MPI_Aint size;
+        int disp_unit;
+        MPI_Win_shared_query(window, 0, &size, &disp_unit, &shared_memory);
+    }
+}
+
+MPI_SharedWindow::~MPI_SharedWindow() {
+    if (window != MPI_WIN_NULL) {
+        MPI_Win_free(&window);  // Free the window before MPI_Finalize
+    }
+}
+
+int MPI_SharedWindow::get_shared_memory(int idx) {
+    assert(idx < num_elements);
+    return *(shared_memory + idx);
+}
+
+void MPI_SharedWindow::set_shared_memory(int idx, int value) {
+    assert(idx < num_elements);
+    *(shared_memory + idx) = value;
+}
+
+void MPI_SharedWindow::lock() {
+    if (!depth_lock++)
+        MPI_Win_lock(MPI_LOCK_EXCLUSIVE, 0, 0, window);
+}
+
+void MPI_SharedWindow::unlock() {
+    if (!--depth_lock)
+        MPI_Win_unlock(0, window);
 }
 
 #endif

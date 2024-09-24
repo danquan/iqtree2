@@ -3415,7 +3415,6 @@ void runTreeReconstruction(Params &params, IQTree* &iqtree) {
  ***********************************************************/
 void runMultipleTreeReconstruction(Params &params, Alignment *alignment, IQTree *tree) {
     ModelCheckpoint *model_info = new ModelCheckpoint;
-    
     if (params.suppress_output_flags & OUT_TREEFILE)
         outError("Suppress .treefile not allowed with -runs option");
     string treefile_name = params.out_prefix;

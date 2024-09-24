@@ -1330,7 +1330,6 @@ double ModelFactory::optimizeParameters(int fixed_len, bool write_info,
                                         double logl_epsilon, double gradient_epsilon) {
     ASSERT(model);
     ASSERT(site_rate);
-
 //    double defaultEpsilon = logl_epsilon;
 
     double begin_time = getRealTime();

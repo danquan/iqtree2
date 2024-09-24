@@ -42,6 +42,29 @@
 
 using namespace std;
 
+
+class MPI_SharedWindow {
+public:
+    MPI_SharedWindow(int num_elements);
+
+    ~MPI_SharedWindow();
+
+    int get_shared_memory(int idx);
+
+    void set_shared_memory(int idx, int value);
+
+    void lock();
+
+    void unlock();
+
+private:
+    MPI_Win window;
+    int* shared_memory;
+    int world_rank;
+    int num_elements;
+    int depth_lock;
+};
+
 class MPIHelper {
 public:
     /**
@@ -51,8 +74,6 @@ public:
 
     /** initialize MPI */
     void init(int argc, char *argv[]);
-    
-    void initSharedMemory();
 
     /** finalize MPI */
     void finalize();
@@ -283,26 +304,10 @@ public:
     }
 
 private:
-#ifdef _IQTREE_MPI
-    MPI_Win shmwin;
-#endif
-    int *shared_counter;
-    int lockCounter = 0;
-
-public:
-
-    int incrementSharedCounter(int id = 0);
-    int decrementSharedCounter(int id = 0);
-    int getSharedCounter(int id = 0);
-    void setSharedCounter(int delta, int id = 0);
-    void lock();
-    void unlock();
-
-private:
     int numTreeSent;
 
     int numTreeReceived;
-
+    
 public:
     int getNumNNISearch() const {
         return numNNISearch;
@@ -312,9 +317,11 @@ public:
         MPIHelper::numNNISearch = numNNISearch;
     }
 
+    int numModels;
+    
+    MPI_SharedWindow* models;
 private:
     int numNNISearch;
-
 
 };
 
