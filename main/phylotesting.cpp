@@ -3313,56 +3313,54 @@ CandidateModel CandidateModelSet::evaluateMPI(Params &params, PhyloTree* in_tree
         double begin = getCPUTime();
         int model = MPIHelper::getInstance().models->get_and_increment(idxCounter);
         
-        printf("Process %d get model %ld\n", MPIHelper::getInstance().getProcessID(), model);
         // printf("Process %d get model %ld\n", MPIHelper::getInstance().getProcessID(), model);
         if (model >= num_models)
             break;
-
+        
+        printf("Process %d get model %ld\n", MPIHelper::getInstance().getProcessID(), model);
+        
         // ignore bad models
-        if (MPIHelper::getInstance().models->get_shared_memory(model) == DBL_MAX) {
-            continue;
-        }
+        if (MPIHelper::getInstance().models->get_shared_memory(model) != DBL_MAX) {
+            // optimize model parameters
+            // keep separate output model_info to only update model_info if better model found
+            ModelCheckpoint out_model_info;
+            at(model).set_name = at(model).aln->name;
+            string tree_string;
+            
+            // main call to estimate model parameters
+            double cur = getRealTime();
+            tree_string = at(model).evaluate(params, model_info, out_model_info,
+                                            models_block, num_threads, brlen_type);
+            printf("Model %ld evaluated in %f seconds\n", model, getRealTime() - cur);
 
-        // optimize model parameters
-        // keep separate output model_info to only update model_info if better model found
-        ModelCheckpoint out_model_info;
-        at(model).set_name = at(model).aln->name;
-        string tree_string;
-        
-        // main call to estimate model parameters
-        double cur = getRealTime();
-        tree_string = at(model).evaluate(params, model_info, out_model_info,
-                                         models_block, num_threads, brlen_type);
-        printf("Model %ld evaluated in %f seconds\n", model, getRealTime() - cur);
+            at(model).computeICScores();
+            MPIHelper::getInstance().models->set_shared_memory(model, at(model).getScore());
 
-        at(model).computeICScores();
-        MPIHelper::getInstance().models->set_shared_memory(model, at(model).getScore());
-
-        int lower_model = getLowerKModel(model);
-        if (lower_model >= 0 && getScore(lower_model) < at(model).getScore()) {
-            // ignore all +R_k model with higher category
-            for (int higher_model = model; higher_model != -1;
-                higher_model = getHigherKModel(higher_model)) {
-                MPIHelper::getInstance().models->set_shared_memory(higher_model, DBL_MAX);
+            int lower_model = getLowerKModel(model);
+            if (lower_model >= 0 && getScore(lower_model) < at(model).getScore()) {
+                // ignore all +R_k model with higher category
+                for (int higher_model = model; higher_model != -1;
+                    higher_model = getHigherKModel(higher_model)) {
+                    MPIHelper::getInstance().models->set_shared_memory(higher_model, DBL_MAX);
+                }
             }
-        }
 
-        if (write_info) {
-            printf("%3d  %-13s %12.3f %3d %12.3f %12.3f %12.3f\n",
-               model + 1,
-               at(model).getName().c_str(),
-               -at(model).logl,
-               at(model).df,
-               at(model).AIC_score,
-               at(model).AICc_score,
-               at(model).BIC_score);
+            if (write_info) {
+                printf("%3d  %-13s %12.3f %3d %12.3f %12.3f %12.3f\n",
+                model + 1,
+                at(model).getName().c_str(),
+                -at(model).logl,
+                at(model).df,
+                at(model).AIC_score,
+                at(model).AICc_score,
+                at(model).BIC_score);
+            }
+            
+            if (model >= rate_block)
+                filterRatesMPI(model); // auto filter rate models
+            if (model >= subst_block)
+                filterSubstMPI(model); // auto filter substitution model
         }
-        
-
-        if (model >= rate_block)
-            filterRatesMPI(model); // auto filter rate models
-        if (model >= subst_block)
-            filterSubstMPI(model); // auto filter substitution model
         
         // save checkpoint
         stringstream ostr;
@@ -3389,12 +3387,16 @@ CandidateModel CandidateModelSet::evaluateMPI(Params &params, PhyloTree* in_tree
         MPIHelper::getInstance().recvCheckpoint(checkpoint, PROC_MASTER); 
     }
 
+    printf("Process %d done\n", MPIHelper::getInstance().getProcessID());
+
     for (int model = 0; model < num_models; ++model) {
         // restore checkpoint
         string val;
         if (!checkpoint->getString(at(model).getName(), val)) continue;
         stringstream str(val);
         str >> at(model).logl >> at(model).df >> at(model).tree_len >> at(model).AIC_score >> at(model).AICc_score >> at(model).BIC_score;
+        if (at(model).getScore() != DBL_MAX)
+            at(model).setFlag(MF_DONE);
     }
 
     MPIHelper::getInstance().barrier();
@@ -3406,11 +3408,10 @@ CandidateModel CandidateModelSet::evaluateMPI(Params &params, PhyloTree* in_tree
         model_info.put("best_model_" + criterionName(mtc), at(best_model).getName());
     }
     
-    
     /* sort models by their scores */
     multimap<double,int> model_sorted;
     for (int64_t model = 0; model < num_models; model++)
-        if (at(model).hasFlag(MF_DONE)) {
+        if (MPIHelper::getInstance().models->get_shared_memory(model) != DBL_MAX) {
             model_sorted.insert(multimap<double,int>::value_type(at(model).getScore(), model));
         }
     string model_list;
@@ -3421,8 +3422,7 @@ CandidateModel CandidateModelSet::evaluateMPI(Params &params, PhyloTree* in_tree
     }
     
     model_info.putBestModelList(model_list);
-    if (MPIHelper::getInstance().isMaster())
-        model_info.dump();
+    model_info.dump();
 
     // update alignment if best data type changed
     int best_model = getBestModelID(params.model_test_criterion);
