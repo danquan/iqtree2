@@ -321,12 +321,12 @@ vector<DoubleVector> MPIHelper::gatherAllVectors(const vector<DoubleVector> &vts
 }
 
 MPI_SharedWindow::MPI_SharedWindow(int num_elements)
-    : window(MPI_WIN_NULL), shared_memory(nullptr), num_elements(num_elements) {
+    : window(MPI_WIN_NULL), shared_memory(nullptr), num_elements(num_elements), depth_lock(0) {
     MPI_Info win_info;
     MPI_Info_create(&win_info);
 
     // Create shared memory window for all processes
-    MPI_Win_allocate_shared(MPIHelper::getInstance().isMaster() ? sizeof(int) * num_elements : 0, sizeof(int), win_info, MPI_COMM_WORLD, &shared_memory, &window);
+    MPI_Win_allocate_shared(MPIHelper::getInstance().isMaster() ? sizeof(double) * num_elements : 0, sizeof(double), win_info, MPI_COMM_WORLD, &shared_memory, &window);
     MPI_Info_free(&win_info);
 
     // Map shared memory for other processes
@@ -343,14 +343,30 @@ MPI_SharedWindow::~MPI_SharedWindow() {
     }
 }
 
-int MPI_SharedWindow::get_shared_memory(int idx) {
+double MPI_SharedWindow::get_shared_memory(int idx) {
     assert(idx < num_elements);
-    return *(shared_memory + idx);
+    double ret;
+    lock();
+    MPI_Get(&ret, 1, MPI_DOUBLE, 0, idx, 1, MPI_DOUBLE, window);
+    unlock();
+    return ret;
 }
 
-void MPI_SharedWindow::set_shared_memory(int idx, int value) {
+void MPI_SharedWindow::set_shared_memory(int idx, double value) {
     assert(idx < num_elements);
-    *(shared_memory + idx) = value;
+    lock();
+    MPI_Put(&value, 1, MPI_DOUBLE, 0, idx, 1, MPI_DOUBLE, window);
+    unlock();
+}
+
+int MPI_SharedWindow::get_and_increment(int idx) {
+    assert(idx < num_elements);
+    double one = 1;
+    double ret;
+    lock();
+    MPI_Fetch_and_op(&one, &ret, MPI_DOUBLE, 0, idx, MPI_SUM, window);
+    unlock();
+    return ret;
 }
 
 void MPI_SharedWindow::lock() {

@@ -147,23 +147,10 @@ public:
     
     /** turn on some flag with OR operator */
     void setFlag(int flag) {
-        if (Params::getInstance().mpi_by_model) {
-            MPIHelper::getInstance().models->lock();
-            int val = MPIHelper::getInstance().models->get_shared_memory(idx);
-            MPIHelper::getInstance().models->set_shared_memory(idx, val | flag);
-            MPIHelper::getInstance().models->unlock();
-            return;
-        }
         this->flag |= flag;
     }
 
     bool hasFlag(int flag) {
-        if (Params::getInstance().mpi_by_model) {
-            MPIHelper::getInstance().models->lock();
-            int val = MPIHelper::getInstance().models->get_shared_memory(idx);
-            MPIHelper::getInstance().models->unlock();
-            return (val & flag) != 0;
-        }
         return (this->flag & flag) != 0;
     }
     
@@ -221,10 +208,14 @@ public:
      */
     void filterRates(int finished_model);
 
+    void filterRatesMPI(int finished_model);
+
     /**
      Filter out all "non-promissing" substitution models
      */
     void filterSubst(int finished_model);
+
+    void filterSubstMPI(int finished_model);
 
     /**
      testing the best-fit model

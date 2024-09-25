@@ -49,17 +49,19 @@ public:
 
     ~MPI_SharedWindow();
 
-    int get_shared_memory(int idx);
+    double get_shared_memory(int idx);
 
-    void set_shared_memory(int idx, int value);
+    void set_shared_memory(int idx, double value);
 
     void lock();
 
     void unlock();
 
+    int get_and_increment(int idx);
+
 private:
     MPI_Win window;
-    int* shared_memory;
+    double* shared_memory;
     int world_rank;
     int num_elements;
     int depth_lock;
