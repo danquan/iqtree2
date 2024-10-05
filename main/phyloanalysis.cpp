@@ -1236,7 +1236,12 @@ void reportSubstitutionProcess(ostream &out, Params &params, IQTree &tree)
             out << "  ID  Model           Speed  Parameters" << endl;
         //out << "-------------------------------------" << endl;
 
+        Checkpoint* ckp = tree.getCheckpoint();
+        ckp->startStruct("matrix");
+
         stringstream ss;
+        double full_mat[400];
+
         for (it = stree->begin(), part = 0; it != stree->end(); it++, part++) {
             ss.width(4);
             ss << right << (part+1) << "  ";
@@ -1245,7 +1250,10 @@ void reportSubstitutionProcess(ostream &out, Params &params, IQTree &tree)
                 ss << left << (*it)->getModelName() << " " << (*it)->treeLength() << "  " << (*it)->getModelNameParams(show_full_params) << endl;
             else
                 ss << left << (*it)->getModelName() << " " << stree->part_info[part].part_rate  << "  " << (*it)->getModelNameParams(show_full_params) << endl;
+            (*it)->getModel()->getQMatrix(full_mat);
+            ckp->putArray(std::to_string(part), (*it)->getModel()->num_states * (*it)->getModel()->num_states, full_mat);      
         }
+        ckp->endStruct();
 
         #ifdef _IQTREE_MPI
         if (!params.non_mpi_treesearch) {
@@ -4468,6 +4476,539 @@ void doSymTest(Alignment *alignment, Params &params) {
         exit(EXIT_SUCCESS);
 }
 
+vector<double> calcRate(Alignment *aln) {
+    vector<double> rates;
+    vector<vector<vector<int>>> sequences(aln->size());
+    for (int i = 0; i < aln->size(); ++i) {
+        Pattern p = aln->at(i);
+        if (p.isConst()) continue;
+        map<StateType, vector<int>> states;
+        for (int j = 0; j < p.size(); ++j) {
+            states[p[j]].push_back(j);
+        }
+        
+        for (auto it = states.begin(); it != states.end(); ++it)
+            sequences[i].push_back(it->second);
+    }
+    vector<double> ratePatterns(aln->size());
+    
+    for (int i = 0; i < aln->size(); ++i) {
+        if (aln->at(i).isConst()) {
+            ratePatterns[i] = 1.0;
+            continue;
+        }
+        vector<int> inSeq(aln->getNSeq());
+        for (int j = 0; j < sequences[i].size(); ++j) {
+            for (auto x : sequences[i][j]) {
+                inSeq[x] = j;
+            }
+        }
+
+        int totalCount = 0;
+        double score = 0;
+        for (int j = 0; j < aln->size(); ++j) {
+            if (aln->at(j).isConst()) continue;
+            int cnt = 0;
+            totalCount += aln->at(j).frequency;
+            for (auto seq2 : sequences[j]) {
+                int idx = inSeq[seq2[0]];
+                auto seq = sequences[i][idx];
+                bool found = true;
+                for (int x = 0, y = 0; x < seq2.size(); ++x) {
+                    while (y < seq.size() && seq[y] != seq2[x]) ++y;
+                    if (y == seq.size()) {
+                        found = false;
+                        break;
+                    }
+                    ++y;
+                }
+                if (found) ++cnt;
+            }
+            score += 1.0 * cnt / sequences[j].size() * aln->at(j).frequency;
+        }
+        ratePatterns[i] = score / totalCount;
+    }
+    for (int i = 0; i < aln->getNSite(); ++i)
+        rates.push_back(ratePatterns[aln->getPatternID(i)]);
+    return rates;
+}
+
+vector<double> calcRateFast(Alignment *aln) {
+    vector<vector<int>> f(aln->getNSeq(), vector<int>(aln->getNSeq(), 0));
+
+    for (int i = 0; i < aln->getNSeq(); ++i) 
+        for (int j = i + 1; j < aln->getNSeq(); ++j) 
+            for (int k = 0; k < aln->getNSite(); ++k) {
+                if (aln->at(aln->getPatternID(k))[i] == aln->at(aln->getPatternID(k))[j]) ++f[i][j];
+            }
+    long long total = 0;
+    for (int i = 0; i < aln->getNSeq(); ++i) 
+        for (int j = i + 1; j < aln->getNSeq(); ++j) 
+            total += f[i][j];
+    vector<double> rates;
+    for (int i = 0; i < aln->getNSite(); ++i) {
+        map<StateType, vector<int>> states;
+        for (int j = 0; j < aln->getNSeq(); ++j) {
+            states[aln->at(aln->getPatternID(i))[j]].push_back(j);
+        }
+        long long same = 0;
+        for (auto it = states.begin(); it != states.end(); ++it) {
+            for (int j = 0; j < it->second.size(); ++j) {
+                for (int k = j + 1; k < it->second.size(); ++k) {
+                    same += f[it->second[j]][it->second[k]];
+                }
+            }
+        }
+        rates.push_back(same);
+    }
+    for (int i = 0; i < aln->getNSite(); ++i) {
+        rates[i] = 1 - 1.0 * rates[i] / total;
+    }
+    return rates;
+}
+
+int getPartitionIdx(vector<double> lh, int stg) {
+    if (stg == 0) { // assign to best likelihood subset
+        return (int)(std::max_element(lh.begin(), lh.end()) - lh.begin());
+    } else { // assign to subset based on probability distribution
+        double minLH = 1e9;
+        for (int i = 0; i < lh.size(); ++i) {
+            if (lh[i] != -1e9 && lh[i] < minLH) minLH = lh[i];
+        }
+        vector<double> eps;
+        for (int i = 0; i < lh.size(); ++i) {
+            if (lh[i] == - 1e9) eps.push_back(0);
+            else eps.push_back(exp(lh[i] - minLH));
+        }
+        double total = std::accumulate(eps.begin(), eps.end(), 0.0);
+        double r = random_double();
+        assert(0 <= r && r < 1);
+
+        for (int i = 0; i < eps.size(); ++i) {
+            if (r < eps[i] / total) return i;
+            r -= eps[i] / total;
+        }
+        assert(0);
+    } 
+}
+
+vector<double> calcLH(Params& params, Alignment* aln, std::string model, std::string treefile) {    
+    const std::string prefixPath = string(params.out_prefix) + "/tmp/";
+
+    std::string filename = prefixPath + aln->name;
+    aln->printAlignment(IN_PHYLIP, filename.c_str());
+
+    char* argv[] = {
+        "", 
+        "-s", &filename[0],
+        "-m", &model[0],
+        "-t", &treefile[0],
+        "--sitelh", 
+        "--safe", 
+        "-T", &std::to_string(params.num_threads)[0],
+        "-keep-ident",
+        "--redo",
+        "-seed", &std::to_string(params.ran_seed)[0]
+    };
+    int argc = sizeof(argv) / sizeof(char*);
+    Params::addParams(argc, argv);
+    Checkpoint *checkpoint = new Checkpoint;
+    runPhyloAnalysis(Params::getInstance(), checkpoint);
+    Params::removeParams();
+
+    std::vector<double> lh;
+    std::ifstream in(prefixPath + aln->name + ".sitelh");
+    
+    std::string line;
+    std::getline(in, line); // skip the first line
+    std::getline(in, line);
+    std::istringstream iss(line);
+    std::string tmp; iss >> tmp; // skip the first word
+    double l;
+    while (iss >> l) {
+        lh.push_back(l);
+    }
+    return lh;
+};
+
+vector<string> getCandidateModels(Params &params, Alignment *aln, std::vector<std::vector<int>> sitesOfParts) {
+    const std::string prefixPath = string(params.out_prefix) + "/tmp/";
+
+    int n = sitesOfParts.size();
+    ofstream out(prefixPath + aln->name + ".partitions");
+    out << "#nexus\nbegin sets;\n";
+    for (int i = 0; i < n; ++i) {
+        out << "charset " << aln->name << "_" << i << " = ";
+        for (int j = 0; j < sitesOfParts[i].size(); ++j) {
+            out << sitesOfParts[i][j] + 1;
+            if (j < sitesOfParts[i].size() - 1) out << ",";
+        }
+        out << ";\n";
+    }
+    out << "end;\n";
+    out.close();
+    aln->printAlignment(IN_PHYLIP, (prefixPath + aln->name).c_str());
+    std::cout << "Finding the best model for " << aln->name << "..." << std::endl;
+    
+    std::string arg_s = prefixPath + aln->name;
+    std::string arg_prefix = prefixPath + aln->name;
+    std::string arg_p = prefixPath + aln->name + ".partitions";
+
+    char* argv[] = {
+        "", 
+        "-s", &arg_s[0],
+        "-p", &arg_p[0],
+        "--prefix", &arg_prefix[0],
+        "-m", "MF",
+        "--fast",
+        "-T", &std::to_string(params.num_threads)[0],
+        "-keep-ident",
+        "--redo",
+        "-seed", &std::to_string(params.ran_seed)[0]
+    };
+    int argc = sizeof(argv) / sizeof(char*);
+    Params::addParams(argc, argv);
+    Checkpoint *checkpoint = new Checkpoint;
+    runPhyloAnalysis(Params::getInstance(), checkpoint);
+    Params::removeParams();
+
+    ifstream inp(prefixPath + aln->name + ".iqtree");
+    std::string line;
+    std::vector<std::string> models;
+    while (std::getline(inp, line)) {
+        if (line.find("Best-fit model") != std::string::npos) {
+            std::string str = line.substr(line.find(":") + 2);
+            bool isModel = 1;
+            std::string model;
+            for (int i = 0; i < str.size(); ++i) {
+                if (str[i] == ':') {
+                    assert(isModel);
+                    models.push_back(model);
+                    isModel = false;
+                    model = "";
+                } else if (str[i] == ',') {
+                    assert(!isModel);
+                    isModel = true;
+                } else if (isModel) {
+                    model += str[i];
+                }
+            }
+        }
+    }
+    for (auto &model: models) {
+        int pos = model.find("+ASC");
+        if (pos != std::string::npos) {
+            model = model.substr(0, pos) + model.substr(pos + 4);
+        }
+    }
+    models.erase(std::unique(models.begin(), models.end()), models.end());
+    return models;
+};
+
+double getBIC(Params &params, Alignment* aln) {
+    const std::string prefixPath = string(params.out_prefix) + "/tmp/";
+
+    std::ifstream inp(prefixPath + aln->name + "_BIC.iqtree");
+    if (!inp) {
+        printf("Running BIC checking for %s\n", aln->name.c_str());
+        aln->printAlignment(IN_PHYLIP, (prefixPath + aln->name).c_str());
+    
+        std::string arg_s = prefixPath + aln->name;
+        std::string arg_prefix = prefixPath + aln->name + "_BIC";
+
+        char* argv[] = {
+            "", 
+            "-s", &arg_s[0],
+            "-mset", &params.model_set[0],
+            "--prefix", &arg_prefix[0],
+            "-m", "MF",
+            "-T", &std::to_string(params.num_threads)[0],
+            "--safe",
+            "--redo",
+            "--seed", &std::to_string(params.ran_seed)[0]
+        };
+        int argc = sizeof(argv) / sizeof(char*);
+        Params::addParams(argc, argv);
+        Checkpoint *checkpoint = new Checkpoint;
+        runPhyloAnalysis(Params::getInstance(), checkpoint);
+        Params::removeParams();
+        inp = std::ifstream(prefixPath + aln->name + "_BIC.iqtree");
+    }
+    std::string line;
+    while (std::getline(inp, line)) {
+        if (line.find("Bayesian information criterion (BIC) score:") != std::string::npos) {
+            std::string str = line.substr(line.find(":") + 2);
+            return std::stod(str);
+        }
+    }
+    exit(0);
+}
+
+const int BOUND_LEN = 50;
+
+void runMPartition(Params &params, Alignment* aln) {
+    std::cout << "Running mPartition..." << std::endl;
+    
+    const std::string splitDir = string(params.out_prefix) + "/split/";
+    const std::string prefixPath = string(params.out_prefix) + "/tmp/";
+    
+    queue<Alignment*> alnQueue;
+    alnQueue.push(aln);
+
+    const std::string treefile = prefixPath + aln->name + ".treefile";
+
+    while (!alnQueue.empty()) {
+        Alignment* aln = alnQueue.front();
+        alnQueue.pop();
+
+        printf("%d\n", aln->getNSite());
+        std::vector<double> rates = calcRate(aln);
+
+        double maxRate = - 1e18, minRate = 1e18;
+        for (int i = 0; i < rates.size(); ++i) {
+            if (maxRate < rates[i]) maxRate = rates[i];
+            if (minRate > rates[i]) minRate = rates[i];
+        }
+        double lowerPivot = minRate + (maxRate - minRate) / 3;
+        double upperPivot = maxRate - (maxRate - minRate) / 3;
+
+        std::vector<std::vector<int>> sitesOfParts(3);
+        for (int i = 0; i < rates.size(); ++i) {
+            if (rates[i] < lowerPivot) sitesOfParts[0].push_back(i);
+            else if (rates[i] < upperPivot) sitesOfParts[1].push_back(i);
+            else sitesOfParts[2].push_back(i);
+        }
+        
+        auto getSmallParts = [&]() {
+            std::vector<int> smalls;
+            for (int i = 0; i < sitesOfParts.size(); ++i) {
+                if (sitesOfParts[i].size() < BOUND_LEN) smalls.push_back(i);
+            }
+            return smalls;
+        };
+
+        vector<int> smalls = getSmallParts();
+        if (smalls.size() > 0) {
+            sitesOfParts.assign(2, vector<int>());
+            double pivot;
+            if (smalls == vector<int>({0, 1})) pivot = upperPivot;
+            else if (smalls == vector<int>({1, 2})) pivot = lowerPivot;
+            else pivot = (maxRate + minRate) / 2;
+            for (int i = 0; i < rates.size(); ++i) {
+                if (rates[i] < pivot) sitesOfParts[0].push_back(i);
+                else sitesOfParts[1].push_back(i);
+            }
+            if (getSmallParts().size()) {
+                aln->printAlignment(IN_PHYLIP, (splitDir + aln->name).c_str());
+                continue;
+            }
+        }
+        for (auto part: sitesOfParts) {
+            assert(part.size() >= BOUND_LEN);
+        }
+        printf("Find the best model for %s\n", aln->name.c_str());
+        std::vector<std::string> models = getCandidateModels(params, aln, sitesOfParts);
+       
+        std::vector<double> lh[(int)models.size()];
+        sitesOfParts = std::vector<std::vector<int>>(models.size());
+        printf("Calculating likelihood for %s\n", aln->name.c_str());
+        for (int i = 0; i < sitesOfParts.size(); ++i) 
+            lh[i] = calcLH(params, aln, models[i], treefile);
+        // reassign sites to subsets
+        printf("Reassigning sites for %s\n", aln->name.c_str());
+        for (int i = 0; i < aln->getNSite(); ++i) {
+            Pattern p = aln->getPattern(i);
+            vector<double> lhs;
+            for (int j = 0; j < sitesOfParts.size(); ++j) {
+                lhs.push_back(lh[j][i]);
+            }
+
+            int idx = (p.isConst() ? getPartitionIdx(lhs, 1) : getPartitionIdx(lhs, 0));
+            sitesOfParts[idx].push_back(i);
+        }
+        printf("Merging small parts into a larger one for %s\n", aln->name.c_str());
+        smalls = getSmallParts();
+
+        if (sitesOfParts.size() - smalls.size() < 2) {
+            aln->printAlignment(IN_PHYLIP, (splitDir + aln->name).c_str());
+            continue;
+        }
+        for (auto i: smalls) {
+            vector<int> others;
+            for (int j = 0; j < sitesOfParts.size(); ++j) {
+                if (j != i) {
+                    others.push_back(j);
+                }
+            }
+            for (auto j: sitesOfParts[i]) {
+                if (lh[others[0]][j] > lh[others[1]][j]) {
+                    sitesOfParts[others[0]].push_back(j);
+                } else {
+                    sitesOfParts[others[1]].push_back(j);
+                }
+            }
+            sitesOfParts[i].clear();
+        }
+        printf("Splitting partitions for %s\n", aln->name.c_str());
+        double prevBIC = getBIC(params, aln);
+        double curBIC = 0;
+        vector<Alignment*> subAlns;
+        for (int i = 0; i < sitesOfParts.size(); ++i) {
+            if (sitesOfParts[i].empty()) continue;
+            Alignment* subAln = new Alignment;
+            subAln->extractSites(aln, sitesOfParts[i]);
+            subAln->name = aln->name + "_" + std::to_string(i);
+            subAlns.push_back(subAln);
+            curBIC += getBIC(params, subAln);
+        }
+        printf("BIC: %lf -> %lf\n", prevBIC, curBIC);
+        if (prevBIC > curBIC) {
+            for (auto subAln: subAlns) {
+                alnQueue.push(subAln);
+            }
+        } else {
+            aln->printAlignment(IN_PHYLIP, (splitDir + aln->name).c_str());
+        }
+    }
+}
+
+void runGPartition(Params &params, Alignment* aln) {
+    const int numSubsets = ceil(aln->getNSite() / 100); 
+    const std::string splitDir = string(params.out_prefix) + "/split/";
+    const std::string prefixPath = string(params.out_prefix) + "/tmp/";
+        
+    // calculate rates by fast TIGER
+    std::vector<double> rates = calcRateFast(aln);
+
+    double maxRate = *max_element(rates.begin(), rates.end());
+    double minRate = *min_element(rates.begin(), rates.end());
+    
+    double lenPerSubset = (maxRate - minRate) / numSubsets;
+
+    std::vector<std::vector<int>> sitesOfParts(numSubsets);
+    for (int i = 0; i < rates.size(); ++i) {
+        int idx = -1;
+        for (int j = 0; j < numSubsets; ++j) {
+            if (rates[i] < minRate + lenPerSubset * (j + 1)) {
+                idx = j;
+                break;
+            }
+        }
+        if (idx == -1) idx = numSubsets - 1;
+        sitesOfParts[idx].push_back(i);
+    }
+    for (int i = 0; i < numSubsets; ++i) {
+        if (sitesOfParts[i].size() < BOUND_LEN) {
+            if (i < numSubsets - 1) {
+                sitesOfParts[i + 1].insert(sitesOfParts[i + 1].end(), sitesOfParts[i].begin(), sitesOfParts[i].end());
+                sitesOfParts[i].clear();
+            } else {
+                for (int j = i - 1; j >= 0; --j) {
+                    if (sitesOfParts[j].size()) {
+                        sitesOfParts[j].insert(sitesOfParts[j].end(), sitesOfParts[i].begin(), sitesOfParts[i].end());
+                        sitesOfParts[i].clear();
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    for (int i = 0; i < sitesOfParts.size(); ++i) {
+        printf("%d: %d\n", i, sitesOfParts[i].size());
+    }
+    std::vector<std::vector<int>> newSitesOfParts;
+    for (int i = 0; i < sitesOfParts.size(); ++i) {
+        if (sitesOfParts[i].size()) {
+            newSitesOfParts.push_back(sitesOfParts[i]);
+        }
+    }
+    std::swap(sitesOfParts, newSitesOfParts);
+    
+    if (sitesOfParts.size() == 1) {
+        aln->printAlignment(IN_PHYLIP, (splitDir + aln->name).c_str());
+        return;
+    }
+    
+    // find best model for each subset
+    std::vector<std::string> models = getCandidateModels(params, aln, sitesOfParts);
+
+    const std::string treefile = prefixPath + aln->name + ".treefile";
+    // calculate likelihood for each subset based on the best model
+    std::vector<double> lh[(int)models.size()];
+    sitesOfParts = std::vector<std::vector<int>>(models.size());
+    for (int i = 0; i < sitesOfParts.size(); ++i) 
+        lh[i] = calcLH(params, aln, models[i], treefile);
+    // reassign sites to subsets
+    for (int i = 0; i < aln->getNSite(); ++i) {
+        Pattern p = aln->getPattern(i);
+        vector<double> lhs;
+        for (int j = 0; j < sitesOfParts.size(); ++j) {
+            lhs.push_back(lh[j][i]);
+        }
+        int idx = (p.isConst() ? getPartitionIdx(lhs, 1) : getPartitionIdx(lhs, 0));
+        sitesOfParts[idx].push_back(i);
+    }
+
+    std::sort(sitesOfParts.begin(), sitesOfParts.end(), [](const std::vector<int>& a, const std::vector<int>& b) {
+        return a.size() > b.size();
+    });
+
+    for (int i = sitesOfParts.size() - 1; i >= 0; --i) {
+        if (sitesOfParts[i].size() >= BOUND_LEN) continue;
+        for (auto x: sitesOfParts[i]) {
+            vector<double> lhs;
+            for (int j = 0; j < sitesOfParts.size(); ++j) {
+                if (j == i || sitesOfParts[j].empty()) {
+                    lhs.push_back(- 1e9);
+                    continue;
+                }
+                lhs.push_back(lh[j][x]);
+            }
+            Pattern p = aln->getPattern(x);
+            int idx = (p.isConst() ? getPartitionIdx(lhs, 1) : getPartitionIdx(lhs, 0));
+            sitesOfParts[idx].push_back(x);
+        }
+        sitesOfParts[i].clear();
+    }
+
+    for (int i = 0; i < sitesOfParts.size(); ++i) {
+        if (sitesOfParts[i].empty()) continue;
+        Alignment* subAln = new Alignment;
+        subAln->extractSites(aln, sitesOfParts[i]);
+        subAln->name = aln->name + "_" + std::to_string(i);
+        subAln->printAlignment(IN_PHYLIP, (splitDir + subAln->name).c_str());
+    }
+}
+
+void splitAlignment(Params &params, Alignment* aln) {
+    double begin_wallclock_time = getRealTime();
+    double begin_cpu_time = getCPUTime();
+
+    std::iostream null_stream(nullptr);
+    std::streambuf* cout_buffer = std::cout.rdbuf(null_stream.rdbuf());
+
+    const std::string splitDir = string(params.out_prefix) + "/split/";
+    const std::string prefixPath = string(params.out_prefix) + "/tmp/";
+    if (system(("test -d " + prefixPath).c_str()) == 0) {
+        system(("rm -rf " + prefixPath).c_str());
+    }
+    system(("mkdir " + prefixPath).c_str());
+    if (system(("test -d " + splitDir).c_str()) == 0) {
+        system(("rm -rf " + splitDir).c_str());
+    }
+    system(("mkdir " + splitDir).c_str());
+
+    runGPartition(params, aln);
+
+    printf("Split partitions done\n");
+    system(("rm -rf " + prefixPath).c_str());
+    
+    std::cout.rdbuf(cout_buffer);
+    std::cout << "Split partitions took "
+        << convert_time(getRealTime() - begin_wallclock_time) << " (of wall-clock time) "
+        << convert_time(getCPUTime() - begin_cpu_time) << " (of CPU time)" << endl;
+}
+
 void runPhyloAnalysis(Params &params, Checkpoint *checkpoint, IQTree *&tree, Alignment *&alignment)
 {
     checkpoint->putBool("finished", false);
@@ -4506,273 +5047,272 @@ void runPhyloAnalysis(Params &params, Checkpoint *checkpoint, IQTree *&tree, Ali
         }
     }
 
-    if (params.split && params.partition_type == TOPO_UNLINKED) {
-        static_cast<SuperAlignment*>(alignment)->splitPartitions(params);
-    } else {
-        if (params.symtest) {
-            doSymTest(alignment, params);
+    if (params.symtest) {
+        doSymTest(alignment, params);
+    }
+
+    if (params.print_aln_info) {
+        string site_info_file = string(params.out_prefix) + ".alninfo";
+        alignment->printSiteInfo(site_info_file.c_str());
+        cout << "Alignment sites statistics printed to " << site_info_file << endl;
+    }
+
+    /*************** initialize tree ********************/
+    bool isTreeMix = isTreeMixture(params);
+    
+    if (params.optimize_params_use_hmm && !isTreeMix) {
+        outError("option '-hmmster' is only available for tree mixture model");
+    }
+    
+    if (isTreeMix) {
+        if (params.optimize_params_use_hmm)
+            cout << "HMMSTER ";
+        // tree-mixture model
+        cout << "Tree-mixture model" << endl;
+
+        // the minimum gamma shape should be greater than MIN_GAMMA_SHAPE_TREEMIX for tree mixture model
+        if (params.min_gamma_shape < MIN_GAMMA_SHAPE_TREEMIX) {
+            if (params.min_gamma_shape != MIN_GAMMA_SHAPE)
+                cout << "The minimum value for Gamma shape is changed to " << MIN_GAMMA_SHAPE_TREEMIX << endl;
+            params.min_gamma_shape = MIN_GAMMA_SHAPE_TREEMIX;
         }
 
-        if (params.print_aln_info) {
-            string site_info_file = string(params.out_prefix) + ".alninfo";
-            alignment->printSiteInfo(site_info_file.c_str());
-            cout << "Alignment sites statistics printed to " << site_info_file << endl;
-        }
-
-        /*************** initialize tree ********************/
-        bool isTreeMix = isTreeMixture(params);
-        
-        if (params.optimize_params_use_hmm && !isTreeMix) {
-            outError("option '-hmmster' is only available for tree mixture model");
-        }
-        
-        if (isTreeMix) {
-            if (params.optimize_params_use_hmm)
-                cout << "HMMSTER ";
-            // tree-mixture model
-            cout << "Tree-mixture model" << endl;
-
-            // the minimum gamma shape should be greater than MIN_GAMMA_SHAPE_TREEMIX for tree mixture model
-            if (params.min_gamma_shape < MIN_GAMMA_SHAPE_TREEMIX) {
-                if (params.min_gamma_shape != MIN_GAMMA_SHAPE)
-                    cout << "The minimum value for Gamma shape is changed to " << MIN_GAMMA_SHAPE_TREEMIX << endl;
-                params.min_gamma_shape = MIN_GAMMA_SHAPE_TREEMIX;
+        if (params.user_file == NULL) {
+            // get the number after "+T" for tree-mixture model
+            int treeNum = getTreeMixNum(params);
+            if (treeNum == 0) {
+                outError("Specify the number of trees in the model or input the tree file using the option '-te' for tree-mixture model");
             }
-
-            if (params.user_file == NULL) {
-                // get the number after "+T" for tree-mixture model
-                int treeNum = getTreeMixNum(params);
-                if (treeNum == 0) {
-                    outError("Specify the number of trees in the model or input the tree file using the option '-te' for tree-mixture model");
-                }
-                tree = newIQTreeMix(params, alignment, treeNum); // tree mixture model
-            } else {
-                tree = newIQTreeMix(params, alignment); // tree mixture model
-            }
-            if (params.compute_ml_tree_only) {
-                outError("option compute_ml_tree_only cannot be set for tree-mixture model");
-            }
-            tree = newIQTreeMix(params, alignment); // tree mixture model
+            tree = newIQTreeMix(params, alignment, treeNum); // tree mixture model
         } else {
-            #ifdef _IQTREE_MPI
-            if (!params.non_mpi_treesearch) {
-            #endif
-                tree = newIQTree(params, alignment);
-            #ifdef _IQTREE_MPI
-            } else {
-                SuperAlignment* aln = (SuperAlignment*) alignment;
-                vector<pair<long long, int> > costAln;
-                for (int i = 0; i < (int) aln->partitions.size(); i++) {
-                    costAln.push_back(make_pair(1ll * aln->partitions[i]->getNPattern() * aln->partitions[i]->getNSeq() * aln->partitions[i]->getNSeq(), i));
-                }
-
-                sort(costAln.begin(), costAln.end(), greater<pair<int, int> >());
-
-                priority_queue<pair<long long, int>, vector<pair<long long, int> >, greater<pair<long long, int> > > pq;
-                for (int i = 0; i < MPIHelper::getInstance().getNumProcesses(); i++) {
-                    pq.push(make_pair(0, -i));
-                }
-
-                vector<IntVector> assigned(MPIHelper::getInstance().getNumProcesses());
-                // for (int i = 0; i < MPIHelper::getInstance().getNumProcesses(); i++) {
-                //     assigned.push_back(vector<int>());
-                // }
-
-                for (int i = 0; i < (int) costAln.size(); i++) {
-                    long long cost = pq.top().first; 
-                    int idx = -pq.top().second; 
-                    pq.pop();
-                    pq.push(make_pair(cost + costAln[i].first, -idx));
-                    
-                    assigned[idx].push_back(costAln[i].second);
-                }
-
-                // IntVector seqIDs = IntVector();
-                // if (MPIHelper::getInstance().isMaster()) {
-                //     for (int worker = 1; worker < MPIHelper::getInstance().getNumProcesses(); worker++) {
-                //         IntVector workerSeqIDs = IntVector();
-                //         for (int i = 0; i < assigned[worker].size(); i++) {
-                //             workerSeqIDs.push_back(assigned[worker][i]);
-                //         }
-
-                //         int len = workerSeqIDs.size(); 
-                //         MPI_Send(&len, 1, MPI_INT, worker, 100, MPI_COMM_WORLD);
-                //         MPI_Send(&workerSeqIDs[0], workerSeqIDs.size(), MPI_INT, worker, 100, MPI_COMM_WORLD);
-                //         // printf("Worker %d, assigned size: %d\n", worker, assigned[worker].size());
-                //     }
-
-                //     for (int i = 0; i < assigned[0].size(); i++) {
-                //         seqIDs.push_back(assigned[0][i]);
-                //     }
-                // } else {
-                //     int len;
-                //     MPI_Recv(&len, 1, MPI_INT, 0, 100, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
-                //     seqIDs.resize(len);
-                //     MPI_Recv(&seqIDs[0], len, MPI_INT, 0, 100, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-                // }
-
-                IntVector seqIDs = MPIHelper::getInstance().getProcVector(assigned);
-                    
-                alignment = ((SuperAlignment*)alignment)->extractPartitions(seqIDs);
-                tree = newIQTree(params, alignment);
-            }
-            #endif
+            tree = newIQTreeMix(params, alignment); // tree mixture model
         }
+        if (params.compute_ml_tree_only) {
+            outError("option compute_ml_tree_only cannot be set for tree-mixture model");
+        }
+        tree = newIQTreeMix(params, alignment); // tree mixture model
+    } else {
+        #ifdef _IQTREE_MPI
+        if (!params.non_mpi_treesearch) {
+        #endif
+            tree = newIQTree(params, alignment);
+        #ifdef _IQTREE_MPI
+        } else {
+            SuperAlignment* aln = (SuperAlignment*) alignment;
+            vector<pair<long long, int> > costAln;
+            for (int i = 0; i < (int) aln->partitions.size(); i++) {
+                costAln.push_back(make_pair(1ll * aln->partitions[i]->getNPattern() * aln->partitions[i]->getNSeq() * aln->partitions[i]->getNSeq(), i));
+            }
 
-        tree->setCheckpoint(checkpoint);
-        if (isTreeMix) {
-            ((IQTreeMix*) tree)->setMinBranchLen(params);
-        } else if (params.min_branch_length <= 0.0) {
-            params.min_branch_length = 1e-6;
-            if (!tree->isSuperTree() && tree->getAlnNSite() >= 100000) {
-                params.min_branch_length = 0.1 / (tree->getAlnNSite());
-                tree->num_precision = max((int)ceil(-log10(Params::getInstance().min_branch_length))+1, 6);
-                cout.precision(12);
-                cout << "NOTE: minimal branch length is reduced to " << params.min_branch_length << " for long alignment" << endl;
-                cout.precision(3);
+            sort(costAln.begin(), costAln.end(), greater<pair<int, int> >());
+
+            priority_queue<pair<long long, int>, vector<pair<long long, int> >, greater<pair<long long, int> > > pq;
+            for (int i = 0; i < MPIHelper::getInstance().getNumProcesses(); i++) {
+                pq.push(make_pair(0, -i));
             }
-            // Increase the minimum branch length if PoMo is used.
-            if (alignment->seq_type == SEQ_POMO) {
-                params.min_branch_length *= alignment->virtual_pop_size * alignment->virtual_pop_size;
-                cout.precision(12);
-                cout << "NOTE: minimal branch length is increased to " << params.min_branch_length << " because PoMo infers number of mutations and frequency shifts" << endl;
-                cout.precision(3);
+
+            vector<IntVector> assigned(MPIHelper::getInstance().getNumProcesses());
+            // for (int i = 0; i < MPIHelper::getInstance().getNumProcesses(); i++) {
+            //     assigned.push_back(vector<int>());
+            // }
+
+            for (int i = 0; i < (int) costAln.size(); i++) {
+                long long cost = pq.top().first; 
+                int idx = -pq.top().second; 
+                pq.pop();
+                pq.push(make_pair(cost + costAln[i].first, -idx));
+                
+                assigned[idx].push_back(costAln[i].second);
             }
+
+            // IntVector seqIDs = IntVector();
+            // if (MPIHelper::getInstance().isMaster()) {
+            //     for (int worker = 1; worker < MPIHelper::getInstance().getNumProcesses(); worker++) {
+            //         IntVector workerSeqIDs = IntVector();
+            //         for (int i = 0; i < assigned[worker].size(); i++) {
+            //             workerSeqIDs.push_back(assigned[worker][i]);
+            //         }
+
+            //         int len = workerSeqIDs.size(); 
+            //         MPI_Send(&len, 1, MPI_INT, worker, 100, MPI_COMM_WORLD);
+            //         MPI_Send(&workerSeqIDs[0], workerSeqIDs.size(), MPI_INT, worker, 100, MPI_COMM_WORLD);
+            //         // printf("Worker %d, assigned size: %d\n", worker, assigned[worker].size());
+            //     }
+
+            //     for (int i = 0; i < assigned[0].size(); i++) {
+            //         seqIDs.push_back(assigned[0][i]);
+            //     }
+            // } else {
+            //     int len;
+            //     MPI_Recv(&len, 1, MPI_INT, 0, 100, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+            //     seqIDs.resize(len);
+            //     MPI_Recv(&seqIDs[0], len, MPI_INT, 0, 100, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            // }
+
+            IntVector seqIDs = MPIHelper::getInstance().getProcVector(assigned);
+                
+            alignment = ((SuperAlignment*)alignment)->extractPartitions(seqIDs);
+            tree = newIQTree(params, alignment);
+        }
+        #endif
+    }
+
+    tree->setCheckpoint(checkpoint);
+    if (isTreeMix) {
+        ((IQTreeMix*) tree)->setMinBranchLen(params);
+    } else if (params.min_branch_length <= 0.0) {
+        params.min_branch_length = 1e-6;
+        if (!tree->isSuperTree() && tree->getAlnNSite() >= 100000) {
+            params.min_branch_length = 0.1 / (tree->getAlnNSite());
+            tree->num_precision = max((int)ceil(-log10(Params::getInstance().min_branch_length))+1, 6);
+            cout.precision(12);
+            cout << "NOTE: minimal branch length is reduced to " << params.min_branch_length << " for long alignment" << endl;
+            cout.precision(3);
         }
         // Increase the minimum branch length if PoMo is used.
         if (alignment->seq_type == SEQ_POMO) {
-            params.max_branch_length *= alignment->virtual_pop_size * alignment->virtual_pop_size;
-            cout.precision(1);
-            cout << "NOTE: maximal branch length is increased to " << params.max_branch_length << " because PoMo infers number of mutations and frequency shifts" << endl;
+            params.min_branch_length *= alignment->virtual_pop_size * alignment->virtual_pop_size;
+            cout.precision(12);
+            cout << "NOTE: minimal branch length is increased to " << params.min_branch_length << " because PoMo infers number of mutations and frequency shifts" << endl;
             cout.precision(3);
         }
+    }
+    // Increase the minimum branch length if PoMo is used.
+    if (alignment->seq_type == SEQ_POMO) {
+        params.max_branch_length *= alignment->virtual_pop_size * alignment->virtual_pop_size;
+        cout.precision(1);
+        cout << "NOTE: maximal branch length is increased to " << params.max_branch_length << " because PoMo infers number of mutations and frequency shifts" << endl;
+        cout.precision(3);
+    }
 
 
-        if (params.concatenate_aln) {
-            Alignment aln(params.concatenate_aln, params.sequence_type, params.intype, params.model_name);
-            cout << "Concatenating " << params.aln_file << " with " << params.concatenate_aln << " ..." << endl;
-            alignment->concatenateAlignment(&aln);
+    if (params.concatenate_aln) {
+        Alignment aln(params.concatenate_aln, params.sequence_type, params.intype, params.model_name);
+        cout << "Concatenating " << params.aln_file << " with " << params.concatenate_aln << " ..." << endl;
+        alignment->concatenateAlignment(&aln);
+    }
+
+    if (params.constraint_tree_file) {
+        if (isTreeMix) {
+            outError("Constraint tree does not work with tree-mixture model");
         }
+        cout << "Reading constraint tree " << params.constraint_tree_file << "..." << endl;
+        tree->constraintTree.readConstraint(params.constraint_tree_file, alignment->getSeqNames());
+        if (params.start_tree == STT_PLL_PARSIMONY)
+            params.start_tree = STT_PARSIMONY;
+        else if (params.start_tree == STT_BIONJ)
+            outError("Constraint tree does not work with -t BIONJ");
+        if (params.num_bootstrap_samples || params.gbo_replicates)
+            cout << "INFO: Constraint tree will be applied to ML tree and all bootstrap trees." << endl;
+    }
 
-        if (params.constraint_tree_file) {
-            if (isTreeMix) {
-                outError("Constraint tree does not work with tree-mixture model");
-            }
-            cout << "Reading constraint tree " << params.constraint_tree_file << "..." << endl;
-            tree->constraintTree.readConstraint(params.constraint_tree_file, alignment->getSeqNames());
-            if (params.start_tree == STT_PLL_PARSIMONY)
-                params.start_tree = STT_PARSIMONY;
-            else if (params.start_tree == STT_BIONJ)
-                outError("Constraint tree does not work with -t BIONJ");
-            if (params.num_bootstrap_samples || params.gbo_replicates)
-                cout << "INFO: Constraint tree will be applied to ML tree and all bootstrap trees." << endl;
+    if (params.compute_seq_identity_along_tree) {
+        if (isTreeMix) {
+            outError("Computing sequence identity does not work with tree-mixture model");
         }
+        if (!params.user_file)
+            outError("Please supply a user tree file!");
+        tree->readTree(params.user_file, params.is_rooted);
+        if (!tree->rooted && !params.root) {
+            outError("Tree is unrooted, thus you have to specify a root with -o option");
+        }
+        tree->setAlignment(tree->aln);
+        if (!tree->rooted)
+            tree->setRootNode(params.root);
+        tree->computeSeqIdentityAlongTree();
+        if (verbose_mode >= VB_MED)
+            tree->drawTree(cout);
+        string out_tree = (string)params.out_prefix + ".seqident_tree";
+        tree->printTree(out_tree.c_str());
+        cout << "Tree with sequence identity printed to " << out_tree << endl;
+    } else if (params.aln_output) {
+        if (isTreeMix) {
+            outError("Coverting alignment feature does not work with tree-mixture model");
+        }
+        /************ convert alignment to other format and write to output file *************/
+        convertAlignment(params, tree);
+    } else if (params.gbo_replicates > 0 && params.user_file && params.second_tree) {
+        // run one of the UFBoot analysis
+//        runGuidedBootstrap(params, alignment, *tree);
+        outError("Obsolete feature");
+    } else if (params.avh_test) {
+        // run one of the wondering test for Arndt
+//        runAvHTest(params, alignment, *tree);
+        outError("Obsolete feature");
+    } else if (params.bootlh_test) {
+        // run Arndt's plot of tree likelihoods against bootstrap alignments
+//        runBootLhTest(params, alignment, *tree);
+        outError("Obsolete feature");
+    } else if (params.split) {
+        splitAlignment(params, alignment);
+    } else if (params.num_bootstrap_samples == 0) {
+    /********************************************************************************
+                    THE MAIN MAXIMUM LIKELIHOOD TREE RECONSTRUCTION
+    ********************************************************************************/
+        ModelCheckpoint *model_info = new ModelCheckpoint;
+        alignment->checkGappySeq(params.remove_empty_seq);
 
-        if (params.compute_seq_identity_along_tree) {
-            if (isTreeMix) {
-                outError("Computing sequence identity does not work with tree-mixture model");
+        // remove identical sequences
+        if (params.ignore_identical_seqs) {
+            tree->removeIdenticalSeqs(params);
+            if (tree->removed_seqs.size() > 0 && MPIHelper::getInstance().isMaster() && (params.suppress_output_flags & OUT_UNIQUESEQ) == 0) {
+                string filename = (string)params.out_prefix + ".uniqueseq.phy";
+                tree->aln->printAlignment(params.aln_output_format, filename.c_str());
+                cout << endl << "For your convenience alignment with unique sequences printed to " << filename << endl;
             }
-            if (!params.user_file)
-                outError("Please supply a user tree file!");
-            tree->readTree(params.user_file, params.is_rooted);
-            if (!tree->rooted && !params.root) {
-                outError("Tree is unrooted, thus you have to specify a root with -o option");
-            }
-            tree->setAlignment(tree->aln);
-            if (!tree->rooted)
-                tree->setRootNode(params.root);
-            tree->computeSeqIdentityAlongTree();
-            if (verbose_mode >= VB_MED)
-                tree->drawTree(cout);
-            string out_tree = (string)params.out_prefix + ".seqident_tree";
-            tree->printTree(out_tree.c_str());
-            cout << "Tree with sequence identity printed to " << out_tree << endl;
-        } else if (params.aln_output) {
-            if (isTreeMix) {
-                outError("Coverting alignment feature does not work with tree-mixture model");
-            }
-            /************ convert alignment to other format and write to output file *************/
-            convertAlignment(params, tree);
-        } else if (params.gbo_replicates > 0 && params.user_file && params.second_tree) {
-            // run one of the UFBoot analysis
-    //        runGuidedBootstrap(params, alignment, *tree);
-            outError("Obsolete feature");
-        } else if (params.avh_test) {
-            // run one of the wondering test for Arndt
-    //        runAvHTest(params, alignment, *tree);
-            outError("Obsolete feature");
-        } else if (params.bootlh_test) {
-            // run Arndt's plot of tree likelihoods against bootstrap alignments
-    //        runBootLhTest(params, alignment, *tree);
-            outError("Obsolete feature");
-        } else if (params.num_bootstrap_samples == 0) {
-        /********************************************************************************
-                        THE MAIN MAXIMUM LIKELIHOOD TREE RECONSTRUCTION
-        ********************************************************************************/
-            ModelCheckpoint *model_info = new ModelCheckpoint;
-            alignment->checkGappySeq(params.remove_empty_seq);
+        }
+        alignment = NULL; // from now on use tree->aln instead
 
-            // remove identical sequences
-            if (params.ignore_identical_seqs) {
-                tree->removeIdenticalSeqs(params);
-                if (tree->removed_seqs.size() > 0 && MPIHelper::getInstance().isMaster() && (params.suppress_output_flags & OUT_UNIQUESEQ) == 0) {
-                    string filename = (string)params.out_prefix + ".uniqueseq.phy";
-                    tree->aln->printAlignment(params.aln_output_format, filename.c_str());
-                    cout << endl << "For your convenience alignment with unique sequences printed to " << filename << endl;
-                }
-            }
-            alignment = NULL; // from now on use tree->aln instead
-
-            startTreeReconstruction(params, tree, *model_info);
-            // call main tree reconstruction
-            if (params.num_runs == 1) {
-                runTreeReconstruction(params, tree);
-            } else {
-                runMultipleTreeReconstruction(params, tree->aln, tree);
-            }
-            
-            
-            if (params.ancestral_site_concordance)
-                tree->computeAllAncestralSiteConcordance();
-
-            reportPhyloAnalysis(params, *tree, *model_info);
-
-            // reinsert identical sequences
-            if (tree->removed_seqs.size() > 0) {
-                // BUG FIX: dont use reinsertIdenticalSeqs anymore
-                tree->insertTaxa(tree->removed_seqs, tree->twin_seqs);
-                tree->printResultTree();
-            }
-            delete model_info;
-            
-            if (params.dating_method != "") {
-                doTimeTree(tree);
-            }
-
+        startTreeReconstruction(params, tree, *model_info);
+        // call main tree reconstruction
+        if (params.num_runs == 1) {
+            runTreeReconstruction(params, tree);
         } else {
-            // the classical non-parameter bootstrap (SBS)
-    //        if (params.model_name.find("LINK") != string::npos || params.model_name.find("MERGE") != string::npos)
-    //            outError("-m TESTMERGE is not allowed when doing standard bootstrap. Please first\nfind partition scheme on the original alignment and use it for bootstrap analysis");
-            if (alignment->getNSeq() < 4)
-                outError("It makes no sense to perform bootstrap with less than 4 sequences.");
-            runStandardBootstrap(params, alignment, tree);
+            runMultipleTreeReconstruction(params, tree->aln, tree);
+        }
+        
+        
+        if (params.ancestral_site_concordance)
+            tree->computeAllAncestralSiteConcordance();
+
+        reportPhyloAnalysis(params, *tree, *model_info);
+
+        // reinsert identical sequences
+        if (tree->removed_seqs.size() > 0) {
+            // BUG FIX: dont use reinsertIdenticalSeqs anymore
+            tree->insertTaxa(tree->removed_seqs, tree->twin_seqs);
+            tree->printResultTree();
+        }
+        delete model_info;
+        
+        if (params.dating_method != "") {
+            doTimeTree(tree);
         }
 
-    //    if (params.upper_bound) {
-    //            UpperBounds(&params, alignment, tree);
-    //    }
+    } else {
+        // the classical non-parameter bootstrap (SBS)
+//        if (params.model_name.find("LINK") != string::npos || params.model_name.find("MERGE") != string::npos)
+//            outError("-m TESTMERGE is not allowed when doing standard bootstrap. Please first\nfind partition scheme on the original alignment and use it for bootstrap analysis");
+        if (alignment->getNSeq() < 4)
+            outError("It makes no sense to perform bootstrap with less than 4 sequences.");
+        runStandardBootstrap(params, alignment, tree);
+    }
 
-        if(verbose_mode >= VB_MED){
-            if(tree->isSuperTree() && params.partition_type != BRLEN_OPTIMIZE){
-                ((PhyloSuperTreePlen*) tree)->printNNIcasesNUM();
-            }
+//    if (params.upper_bound) {
+//            UpperBounds(&params, alignment, tree);
+//    }
+
+    if(verbose_mode >= VB_MED){
+        if(tree->isSuperTree() && params.partition_type != BRLEN_OPTIMIZE){
+            ((PhyloSuperTreePlen*) tree)->printNNIcasesNUM();
         }
     }
 
     checkpoint->putBool("finished", true);
     checkpoint->dump(true);
 }
+
 
 void runPhyloAnalysis(Params &params, Checkpoint *checkpoint) {
     IQTree *tree = NULL;
