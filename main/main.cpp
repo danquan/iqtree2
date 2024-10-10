@@ -2245,8 +2245,6 @@ int main(int argc, char *argv[]) {
 
     parseArg(argc, argv, Params::getInstance());
 
-    MPIHelper::getInstance().initSharedMemory();
-
     // 2015-12-05
     Checkpoint *checkpoint = new Checkpoint;
     string filename = (string)Params::getInstance().out_prefix + ".ckp.gz";

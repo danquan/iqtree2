@@ -614,8 +614,26 @@ public:
     static void addParams(int argc, char *argv[]);
     static void removeParams();
 
-    bool lock_BIC_check = false;
+    /**
+     * Applying TIGER algorithm for splitting alignment
+     */
+    bool TIGER;
 
+    /**
+     * Applying fastTIGER algorithm for splitting alignment
+     */
+    bool fastTIGER;
+
+    /**
+     * Split alignment using gPartition
+     */
+    bool gPartition;
+
+    /**
+     * Split alignment using mPartition
+     */
+    bool mPartition;
+    
     /**
      * Parallel for QMaker
     */
@@ -625,11 +643,6 @@ public:
      * Optimize pQMaker using dynamic scheduling
     */
     bool pqmaker2;
-
-    /**
-     *  Optimize pQMaker by splitting alignments
-     */
-    bool split;
 
     /**
     *  Fast and accurate optimiation for alpha and p_invar

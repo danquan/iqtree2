@@ -1016,10 +1016,13 @@ void parseArg(int argc, char *argv[], Params &params) {
     int cnt;
     progress_display::setProgressDisplay(false);
     verbose_mode = VB_MIN;
+    params.mPartition = false;
+    params.gPartition = false;
+    params.TIGER = false;
+    params.fastTIGER = false;
     params.pqmaker = false;
     params.pqmaker2 = false;
     params.non_mpi_treesearch = false;
-    params.split = false;
     params.tree_gen = NONE;
     params.user_file = NULL;
     params.constraint_tree_file = NULL;
@@ -1533,12 +1536,29 @@ void parseArg(int argc, char *argv[], Params &params) {
                 params.pqmaker2 = true;
                 continue;
             }
-            if (strcmp(argv[cnt], "-split") == 0 || strcmp(argv[cnt],"--split") == 0) {
-                params.split = true;
+            if (strcmp(argv[cnt], "-mPartition") == 0 || strcmp(argv[cnt],"--mPartition") == 0) {
+                params.mPartition = true;
+                params.gPartition = false;
+                params.TIGER = true;
+                params.fastTIGER = false;
                 continue;
             }
-            if (strcmp(argv[cnt], "-lock_BIC") == 0 || strcmp(argv[cnt],"--lock_BIC") == 0) {
-                params.lock_BIC_check = true;
+            if (strcmp(argv[cnt], "-gPartition") == 0 || strcmp(argv[cnt],"--gPartition") == 0) {
+                params.mPartition = false;
+                params.gPartition = true;
+                params.TIGER = false;
+                params.fastTIGER = true;
+                continue;
+            }
+            
+            if (strcmp(argv[cnt], "-TIGER") == 0 || strcmp(argv[cnt],"--TIGER") == 0) {
+                params.TIGER = true;
+                params.fastTIGER = false;
+                continue;
+            }
+            if (strcmp(argv[cnt], "-fastTIGER") == 0 || strcmp(argv[cnt],"--fastTIGER") == 0) {
+                params.fastTIGER = true;
+                params.TIGER = false;
                 continue;
             }
 			if (strcmp(argv[cnt], "-ho") == 0 || strcmp(argv[cnt], "-?") == 0) {

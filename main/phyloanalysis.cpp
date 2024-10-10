@@ -4592,9 +4592,7 @@ int getPartitionIdx(vector<double> lh, int stg) {
     } 
 }
 
-vector<double> calcLH(Params& params, Alignment* aln, std::string model, std::string treefile) {    
-    const std::string prefixPath = string(params.out_prefix) + "/tmp/";
-
+vector<double> calcLH(Params& params, Alignment* aln, std::string model, std::string treefile, std::string prefixPath) {    
     std::string filename = prefixPath + aln->name;
     aln->printAlignment(IN_PHYLIP, filename.c_str());
 
@@ -4631,9 +4629,7 @@ vector<double> calcLH(Params& params, Alignment* aln, std::string model, std::st
     return lh;
 };
 
-vector<string> getCandidateModels(Params &params, Alignment *aln, std::vector<std::vector<int>> sitesOfParts) {
-    const std::string prefixPath = string(params.out_prefix) + "/tmp/";
-
+vector<string> getCandidateModels(Params &params, Alignment *aln, std::vector<std::vector<int>> sitesOfParts, std::string prefixPath) {
     int n = sitesOfParts.size();
     ofstream out(prefixPath + aln->name + ".partitions");
     out << "#nexus\nbegin sets;\n";
@@ -4701,13 +4697,74 @@ vector<string> getCandidateModels(Params &params, Alignment *aln, std::vector<st
             model = model.substr(0, pos) + model.substr(pos + 4);
         }
     }
-    models.erase(std::unique(models.begin(), models.end()), models.end());
+
+    checkpoint->startStruct("matrix");
+    vector<vector<double>> matrices;
+    for (int i = 0; i < models.size(); ++i) {
+        vector<double> matrix;
+        checkpoint->getVector(std::to_string(i), matrix);
+        assert(matrix.size() == 16);
+        matrices.push_back(matrix);
+    }
+
+    auto pearsonCorrelation = [&](const std::vector<double>& x, const std::vector<double>& y) {
+        double x_mean = std::accumulate(x.begin(), x.end(), 0.0) / x.size();
+        double y_mean = std::accumulate(y.begin(), y.end(), 0.0) / y.size();
+
+        double covariance = 0.0;
+        double x_sq_sum = 0.0, y_sq_sum = 0.0;
+
+        for (size_t i = 0; i < x.size(); ++i) {
+            double x_diff = x[i] - x_mean;
+            double y_diff = y[i] - y_mean;
+            covariance += x_diff * y_diff;
+            x_sq_sum += x_diff * x_diff;
+            y_sq_sum += y_diff * y_diff;
+        }
+
+        covariance /= x.size();
+        double correlation = covariance / (std::sqrt(x_sq_sum / x.size()) * std::sqrt(y_sq_sum / y.size()));
+        
+        return correlation;
+    };    
+    
+    for (auto model: models) {
+        cerr << model << ' ';
+    }
+    cerr << '\n';
+
+
+    for (int i = 0; i < matrices.size(); ++i) {
+        if (models[i].empty()) continue;
+        for (int j = i + 1; j < matrices.size(); ++j) {
+            if (models[j].empty()) continue;
+            double correlation = pearsonCorrelation(matrices[i], matrices[j]);
+            if (correlation > 0.9995) {
+                models[j] = "";
+            }
+        }
+    }
+
+    for (auto model: models) {
+        cerr << model << ' ';
+    }
+    cerr << '\n';
+
+    for (int i = 0; i < models.size(); ++i) {
+        if (models[i].empty()) {
+            models.erase(models.begin() + i);
+            --i;
+        }
+    }
+
+    for (auto model: models) {
+        cerr << model << ' ';
+    }
+    cerr << '\n';
     return models;
 };
 
-double getBIC(Params &params, Alignment* aln) {
-    const std::string prefixPath = string(params.out_prefix) + "/tmp/";
-
+double getBIC(Params &params, Alignment* aln, std::string prefixPath) {
     std::ifstream inp(prefixPath + aln->name + "_BIC.iqtree");
     if (!inp) {
         printf("Running BIC checking for %s\n", aln->name.c_str());
@@ -4746,12 +4803,7 @@ double getBIC(Params &params, Alignment* aln) {
 
 const int BOUND_LEN = 50;
 
-void runMPartition(Params &params, Alignment* aln) {
-    std::cout << "Running mPartition..." << std::endl;
-    
-    const std::string splitDir = string(params.out_prefix) + "/split/";
-    const std::string prefixPath = string(params.out_prefix) + "/tmp/";
-    
+void runMPartition(Params &params, Alignment* aln, std::string splitDir, std::string prefixPath) {
     queue<Alignment*> alnQueue;
     alnQueue.push(aln);
 
@@ -4762,7 +4814,8 @@ void runMPartition(Params &params, Alignment* aln) {
         alnQueue.pop();
 
         printf("%d\n", aln->getNSite());
-        std::vector<double> rates = calcRate(aln);
+        
+        std::vector<double> rates = (params.fastTIGER ? calcRateFast(aln) : calcRate(aln));
 
         double maxRate = - 1e18, minRate = 1e18;
         for (int i = 0; i < rates.size(); ++i) {
@@ -4807,13 +4860,13 @@ void runMPartition(Params &params, Alignment* aln) {
             assert(part.size() >= BOUND_LEN);
         }
         printf("Find the best model for %s\n", aln->name.c_str());
-        std::vector<std::string> models = getCandidateModels(params, aln, sitesOfParts);
+        std::vector<std::string> models = getCandidateModels(params, aln, sitesOfParts, prefixPath);
        
         std::vector<double> lh[(int)models.size()];
         sitesOfParts = std::vector<std::vector<int>>(models.size());
         printf("Calculating likelihood for %s\n", aln->name.c_str());
         for (int i = 0; i < sitesOfParts.size(); ++i) 
-            lh[i] = calcLH(params, aln, models[i], treefile);
+            lh[i] = calcLH(params, aln, models[i], treefile, prefixPath);
         // reassign sites to subsets
         printf("Reassigning sites for %s\n", aln->name.c_str());
         for (int i = 0; i < aln->getNSite(); ++i) {
@@ -4850,7 +4903,7 @@ void runMPartition(Params &params, Alignment* aln) {
             sitesOfParts[i].clear();
         }
         printf("Splitting partitions for %s\n", aln->name.c_str());
-        double prevBIC = getBIC(params, aln);
+        double prevBIC = getBIC(params, aln, prefixPath);
         double curBIC = 0;
         vector<Alignment*> subAlns;
         for (int i = 0; i < sitesOfParts.size(); ++i) {
@@ -4859,7 +4912,7 @@ void runMPartition(Params &params, Alignment* aln) {
             subAln->extractSites(aln, sitesOfParts[i]);
             subAln->name = aln->name + "_" + std::to_string(i);
             subAlns.push_back(subAln);
-            curBIC += getBIC(params, subAln);
+            curBIC += getBIC(params, subAln, prefixPath);
         }
         printf("BIC: %lf -> %lf\n", prevBIC, curBIC);
         if (prevBIC > curBIC) {
@@ -4872,13 +4925,10 @@ void runMPartition(Params &params, Alignment* aln) {
     }
 }
 
-void runGPartition(Params &params, Alignment* aln) {
-    const int numSubsets = ceil(aln->getNSite() / 100); 
-    const std::string splitDir = string(params.out_prefix) + "/split/";
-    const std::string prefixPath = string(params.out_prefix) + "/tmp/";
+void runGPartition(Params &params, Alignment* aln, std::string splitDir, std::string prefixPath) {
+    const int numSubsets = ceil(aln->getNSite() / 100);
         
-    // calculate rates by fast TIGER
-    std::vector<double> rates = calcRateFast(aln);
+    std::vector<double> rates = (params.fastTIGER ? calcRateFast(aln) : calcRate(aln));
 
     double maxRate = *max_element(rates.begin(), rates.end());
     double minRate = *min_element(rates.begin(), rates.end());
@@ -4930,14 +4980,14 @@ void runGPartition(Params &params, Alignment* aln) {
     }
     
     // find best model for each subset
-    std::vector<std::string> models = getCandidateModels(params, aln, sitesOfParts);
+    std::vector<std::string> models = getCandidateModels(params, aln, sitesOfParts, prefixPath);
 
     const std::string treefile = prefixPath + aln->name + ".treefile";
     // calculate likelihood for each subset based on the best model
     std::vector<double> lh[(int)models.size()];
     sitesOfParts = std::vector<std::vector<int>>(models.size());
     for (int i = 0; i < sitesOfParts.size(); ++i) 
-        lh[i] = calcLH(params, aln, models[i], treefile);
+        lh[i] = calcLH(params, aln, models[i], treefile, prefixPath);
     // reassign sites to subsets
     for (int i = 0; i < aln->getNSite(); ++i) {
         Pattern p = aln->getPattern(i);
@@ -4998,7 +5048,8 @@ void splitAlignment(Params &params, Alignment* aln) {
     }
     system(("mkdir " + splitDir).c_str());
 
-    runGPartition(params, aln);
+    if (params.gPartition) runGPartition(params, aln, splitDir, prefixPath);
+    else runMPartition(params, aln, splitDir, prefixPath);
 
     printf("Split partitions done\n");
     system(("rm -rf " + prefixPath).c_str());
@@ -5244,7 +5295,7 @@ void runPhyloAnalysis(Params &params, Checkpoint *checkpoint, IQTree *&tree, Ali
         // run Arndt's plot of tree likelihoods against bootstrap alignments
 //        runBootLhTest(params, alignment, *tree);
         outError("Obsolete feature");
-    } else if (params.split) {
+    } else if (params.gPartition || params.mPartition) {
         splitAlignment(params, alignment);
     } else if (params.num_bootstrap_samples == 0) {
     /********************************************************************************
