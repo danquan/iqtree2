@@ -673,7 +673,7 @@ void PhyloSuperTree::computePartitionOrder() {
         part_order[i] = id[i];
 
 #ifdef _IQTREE_MPI
-	if (Params::getInstance().pqmaker || Params::getInstance().pqmaker2) {
+	if (Params::getInstance().pqmaker) {
 		computeProcPartitionOrder(cost);
 	}
 #endif
@@ -729,44 +729,6 @@ void PhyloSuperTree::computeProcPartitionOrder(double *cost)
 			pq.pop();
 
 			proc_parts[proc_id].push_back(part_order[i]);
-			proc_cost += cost[i];
-
-			pq.push(make_pair(proc_cost, proc_id));
-		}
-	}
-	proc_part_order = MPIHelper::getInstance().getProcVector(proc_parts);
-}
-#endif
-
-#ifdef _IQTREE_MPI
-void PhyloSuperTree::reComputeProcPartitionOrder(double *cost)
-{
-	int ntrees = size();
-	int nprocs = MPIHelper::getInstance().getNumProcesses();
-	int *id = new int[ntrees];
-	for (int i = 0; i < ntrees; i++)
-	{
-		id[i] = i;
-		cost[i] = - cost[i];
-	}
-	quicksort(cost, 0, ntrees - 1, id);
-	vector<IntVector> proc_parts(nprocs);
-
-	if (MPIHelper::getInstance().isMaster())
-	{
-		priority_queue<DoubleIntPair, vector<DoubleIntPair>, less<DoubleIntPair>> pq;
-		for (int i = 0; i < nprocs; i++)
-		{
-			pq.push(make_pair(0.0, i));
-		}
-
-		for (int i = 0; i < ntrees; i++)
-		{
-			double proc_cost = pq.top().first;
-			int proc_id = pq.top().second;
-			pq.pop();
-
-			proc_parts[proc_id].push_back(id[i]);
 			proc_cost += cost[i];
 
 			pq.push(make_pair(proc_cost, proc_id));

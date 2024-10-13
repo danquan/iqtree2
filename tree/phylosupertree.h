@@ -493,10 +493,6 @@ public:
     double *cost;
 
     void computeProcPartitionOrder(double *);
-
-    #ifdef _IQTREE_MPI
-    void reComputeProcPartitionOrder(double *);
-    #endif
 };
 
 #endif

@@ -10,6 +10,7 @@
 #include "model/partitionmodelplen.h"
 #include "utils/timeutil.h"
 #include "model/modelmarkov.h"
+#include "utils/MPIHelper.h"
 
 /**********************************************************
  * class PartitionModelPlen
@@ -76,8 +77,8 @@ double PartitionModelPlen::optimizeParameters(int fixed_len, bool write_info, do
     PhyloSuperTreePlen *tree = (PhyloSuperTreePlen*)site_rate->getTree();
     double tree_lh = 0.0, cur_lh = 0.0;
     int ntrees = tree->size();
-    
-    
+
+    tree->printResultTree();    
     //tree->initPartitionInfo(); // FOR OLGA: needed here
 
     unordered_map<string, bool> fixed_params;
@@ -100,30 +101,69 @@ double PartitionModelPlen::optimizeParameters(int fixed_len, bool write_info, do
     for(i = 1; i < tree->params->num_param_iterations; i++){
         cur_lh = 0.0;
         if (tree->part_order.empty()) tree->computePartitionOrder();
+
+        if (Params::getInstance().pqmaker) {
+            int proc_ntrees = tree->procSize();
+            vector<double> cur_lhs(ntrees, 0.0);
+
 #ifdef _OPENMP
 #pragma omp parallel for reduction(+: cur_lh) schedule(dynamic) if(tree->num_threads > 1)
 #endif
-        for (int partid = 0; partid < ntrees; partid++) {
-            int part = tree->part_order[partid];
-            // Subtree model parameters optimization
-            tree->part_info[part].cur_score = tree->at(part)->getModelFactory()->
-                optimizeParametersOnly(i+1, gradient_epsilon/min(min(i,ntrees),10),
-                                       tree->part_info[part].cur_score);
-            if (tree->part_info[part].cur_score == 0.0)
-                tree->part_info[part].cur_score = tree->at(part)->computeLikelihood();
-            cur_lh += tree->part_info[part].cur_score;
-            
-            
-            // normalize rates s.t. branch lengths are #subst per site
-            double mean_rate = tree->at(part)->getRate()->rescaleRates();
-            if (fabs(mean_rate-1.0) > 1e-6) {
-                if (tree->fixed_rates) {
-                    outError("Unsupported -spj. Please use proportion edge-linked partition model (-spp)");
-                }
-                tree->at(part)->scaleLength(mean_rate);
-                tree->part_info[part].part_rate *= mean_rate;
+            for (int partid = 0; partid < proc_ntrees; partid++) {
+                int part = tree->proc_part_order[partid];
+                tree->part_info[part].cur_score = tree->at(part)->getModelFactory()->
+                    optimizeParametersOnly(i+1, gradient_epsilon/min(min(i,ntrees),10),
+                                        tree->part_info[part].cur_score);
+                if (tree->part_info[part].cur_score == 0.0)
+                    tree->part_info[part].cur_score = tree->at(part)->computeLikelihood();
+                cur_lhs[part] = tree->part_info[part].cur_score;
             }
             
+            cur_lhs = MPIHelper::getInstance().sumProcs(cur_lhs);
+            syncBranchLengths();
+
+            for (auto e: cur_lhs)
+                cur_lh += e;
+
+            for (int partid = 0; partid < ntrees; partid++) {
+                int part = tree->part_order[partid];
+                tree->part_info[part].cur_score = cur_lhs[part];
+                
+                // normalize rates s.t. branch lengths are #subst per site
+                double mean_rate = tree->at(part)->getRate()->rescaleRates();
+                if (fabs(mean_rate-1.0) > 1e-6) {
+                    if (tree->fixed_rates) {
+                        outError("Unsupported -spj. Please use proportion edge-linked partition model (-spp)");
+                    }
+                    tree->at(part)->scaleLength(mean_rate);
+                    tree->part_info[part].part_rate *= mean_rate;
+                }
+            }
+        } else {
+#ifdef _OPENMP
+#pragma omp parallel for reduction(+: cur_lh) schedule(dynamic) if(tree->num_threads > 1)
+#endif
+            for (int partid = 0; partid < ntrees; partid++) {
+                int part = tree->part_order[partid];
+                // Subtree model parameters optimization
+                tree->part_info[part].cur_score = tree->at(part)->getModelFactory()->
+                    optimizeParametersOnly(i+1, gradient_epsilon/min(min(i,ntrees),10),
+                                        tree->part_info[part].cur_score);
+                if (tree->part_info[part].cur_score == 0.0)
+                    tree->part_info[part].cur_score = tree->at(part)->computeLikelihood();
+                cur_lh += tree->part_info[part].cur_score;
+                
+                
+                // normalize rates s.t. branch lengths are #subst per site
+                double mean_rate = tree->at(part)->getRate()->rescaleRates();
+                if (fabs(mean_rate-1.0) > 1e-6) {
+                    if (tree->fixed_rates) {
+                        outError("Unsupported -spj. Please use proportion edge-linked partition model (-spp)");
+                    }
+                    tree->at(part)->scaleLength(mean_rate);
+                    tree->part_info[part].part_rate *= mean_rate;
+                }
+            }
         }
         if (tree->params->link_alpha) {
             cur_lh = optimizeLinkedAlpha(write_info, gradient_epsilon);

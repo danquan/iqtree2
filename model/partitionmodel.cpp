@@ -294,60 +294,7 @@ double PartitionModel::targetFunk(double x[]) {
     int ntrees = tree->size();
     if (tree->part_order.empty()) tree->computePartitionOrder();
 
-    if (Params::getInstance().pqmaker2) {
-        /*----------------------------------- Run pQMaker2 here ----------------------------------*/
-        DoubleVector results(tree->size());
-        DoubleVector timeCost(tree->size());
-        #ifdef _OPENMP
-        #pragma omp parallel for reduction(+ : res) schedule(dynamic) if (tree->num_threads > 1)
-        #endif
-        #ifdef _IQTREE_MPI
-            for (int j = 0; j < tree->procSize(); j++) {
-                int i = tree->proc_part_order[j];
-        #else
-            for (int j = 0; j < tree->size(); j++) {
-                int i = tree->part_order[j];
-        #endif
-                double begin = getCPUTime();
-
-                ModelSubst *part_model = tree->at(i)->getModel();
-                if (part_model->getName() != model->getName())
-                    continue;
-                bool fixed = part_model->fixParameters(false);
-                results[i] = part_model->targetFunk(x);
-                part_model->fixParameters(fixed);
-
-                double end = getCPUTime();
-                timeCost[i] = end - begin;
-            }
-
-        #ifdef _IQTREE_MPI
-            results = MPIHelper::getInstance().sumProcs(results);
-        #endif
-            for (auto e : results)
-             res += e;
-        
-        #ifdef _IQTREE_MPI
-        if (Params::getInstance().pqmaker2) {
-            for (auto i: tree->proc_part_order)
-                tree->cost[i] += timeCost[i];
-            ++cntLoop;
-            if (cntLoop == 100) {
-                PhyloSuperTree *tree = (PhyloSuperTree*)site_rate->getTree();
-                DoubleVector proc_cost(tree->size());
-                for (int i = 0; i < tree->size(); i++)
-                    proc_cost[i] = tree->cost[i];
-                proc_cost = MPIHelper::getInstance().sumProcs(proc_cost);
-                for (int i = 0; i < tree->size(); i++)
-                    tree->cost[i] = proc_cost[i];
-                tree->reComputeProcPartitionOrder(tree->cost);
-                for (int i = 0; i < tree->size(); i++)
-                    tree->cost[i] = 0;
-                cntLoop = 0;
-            }
-        }
-        #endif
-    } else if (Params::getInstance().pqmaker) {
+    if (Params::getInstance().pqmaker) {
         /*----------------------------------- Run pQMaker here ----------------------------------*/
         DoubleVector results(tree->size());
 
@@ -506,22 +453,6 @@ double PartitionModel::optimizeLinkedModel(bool write_info, double gradient_epsi
 void PartitionModel::dfpmin(double p[], int n, double lower[], double upper[]
                           , double gtol, int *iter, double *fret, double *hessian) {
     Optimization::dfpmin(p, n, lower, upper, gtol, iter, fret, hessian);
-
-    #ifdef _IQTREE_MPI
-        if (Params::getInstance().pqmaker2) {
-            PhyloSuperTree *tree = (PhyloSuperTree*)site_rate->getTree();
-            DoubleVector proc_cost(tree->size());
-            for (int i = 0; i < tree->size(); i++)
-                proc_cost[i] = tree->cost[i];
-            proc_cost = MPIHelper::getInstance().sumProcs(proc_cost);
-            for (int i = 0; i < tree->size(); i++)
-                tree->cost[i] = proc_cost[i];
-            if (cntLoop >= 50) tree->reComputeProcPartitionOrder(tree->cost);
-            for (int i = 0; i < tree->size(); i++)
-                tree->cost[i] = 0;
-            cntLoop = 0;
-        }
-    #endif
 }
 
 double PartitionModel::optimizeLinkedModels(bool write_info, double gradient_epsilon) {
@@ -573,7 +504,7 @@ double PartitionModel::optimizeParameters(int fixed_len, bool write_info, double
 
     for (int step = 0; step < Params::getInstance().model_opt_steps; step++) {
         tree_lh = 0.0;
-        if (Params::getInstance().pqmaker || Params::getInstance().pqmaker2) {
+        if (Params::getInstance().pqmaker) {
             tree_lhs = DoubleVector(ntrees, 0.0);
         }
 
