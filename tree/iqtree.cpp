@@ -2301,10 +2301,6 @@ double IQTree::doTreeSearch() {
             estimateNNICutoff(params);
         }
 
-        // if (MPIHelper::getInstance().getProcessID() == 2) {
-        //     printf("Process 2 heree 2\n");
-        // }
-
         Alignment *saved_aln = aln;
 
         string curTree;
@@ -2317,18 +2313,17 @@ double IQTree::doTreeSearch() {
          * Optimize tree with NNI
          *----------------------------------------*/
         pair<int, int> nniInfos; // <num_NNIs, num_steps>
-        // if (MPIHelper::getInstance().getProcessID() == 2)
-        //     printf("Process 2 heree 3\n");
         nniInfos = doNNISearch();
-        // if (MPIHelper::getInstance().getProcessID() == 2)
-        //     printf("Process 2 heree 4\n");
+        curScore = computeLogL();
         curTree = getTreeString();
         int pos = addTreeToCandidateSet(curTree, curScore, true, MPIHelper::getInstance().getProcessID());
         if (pos != -2 && pos != -1 && (Params::getInstance().fixStableSplits || Params::getInstance().adaptPertubation))
             candidateTrees.computeSplitOccurences(Params::getInstance().stableSplitThreshold);
 
-        // if (MPIHelper::getInstance().isWorker() || MPIHelper::getInstance().gotMessage())
-        //     syncCurrentTree();
+        if (!Params::getInstance().non_mpi_treesearch) {
+            if (MPIHelper::getInstance().isWorker() || MPIHelper::getInstance().gotMessage())
+                syncCurrentTree();
+        }
 
 
         // TODO: cannot check yet, need to somehow return treechanged
