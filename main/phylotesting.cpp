@@ -833,6 +833,8 @@ void runModelFinder(Params &params, IQTree &iqtree, ModelCheckpoint &model_info)
     model_info.setFileName((string)params.out_prefix + ".model.gz");
     if (Params::getInstance().non_mpi_treesearch) {
         model_info.setFileName((string)params.out_prefix + to_string(MPIHelper::getInstance().getProcessID()) + ".model.gz");
+    } else {
+        if (MPIHelper::getInstance().isWorker()) model_info.setFileName("");
     }
     model_info.setDumpInterval(params.checkpoint_dump_interval);
     
