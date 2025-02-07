@@ -2194,7 +2194,9 @@ string IQTree::optimizeBranches(int maxTraversal) {
 }
 
 double IQTree::doTreeSearch() {
-    
+    double cputime_init_ufboot_start = getCPUTime();
+    double realtime_init_ufboot_start = getRealTime();
+
     if (params->numInitTrees > 1) {
         cout << "--------------------------------------------------------------------" << endl;
         cout << "|             INITIALIZING CANDIDATE TREE SET                      |" << endl;
@@ -2259,6 +2261,11 @@ double IQTree::doTreeSearch() {
 
     if (!getCheckpoint()->getBool("finishedCandidateSet"))
         cout << "CHECKPOINT: " << stop_rule.getCurIt() << " search iterations restored" << endl;
+    
+    double cputime_init_ufboot = getCPUTime() - cputime_init_ufboot_start;
+    double realtime_init_ufboot = getRealTime() - realtime_init_ufboot_start;
+    cout << "CPU time for Initializing Candidate Tree Set: " << cputime_init_ufboot << " seconds (" << convert_time(cputime_init_ufboot) << ")" << endl;
+    cout << "Wall-clock time for Initializing Candidate Tree Set: " << realtime_init_ufboot << " seconds (" << convert_time(realtime_init_ufboot) << ")" << endl;
 
     searchinfo.curPerStrength = params->initPS;
     double cur_correlation = 0.0;
@@ -2286,6 +2293,9 @@ double IQTree::doTreeSearch() {
     // count threshold for computing bootstrap correlation
     int ufboot_count, ufboot_count_check;
     stop_rule.getUFBootCountCheck(ufboot_count, ufboot_count_check);
+
+    double cputime_search_ufboot_start = getCPUTime();
+    double realtime_search_ufboot_start = getRealTime();
 
     while (!stop_rule.meetStopCondition(stop_rule.getCurIt(), cur_correlation)) {
 
@@ -2404,6 +2414,14 @@ double IQTree::doTreeSearch() {
 
     }
 
+    double cputime_search_ufboot = getCPUTime() - cputime_search_ufboot_start;
+    double realtime_search_ufboot = getRealTime() - realtime_search_ufboot_start;
+    cout << "CPU time for Tree Search: " << cputime_search_ufboot << " seconds (" << convert_time(cputime_search_ufboot) << ")" << endl;
+    cout << "Wall-clock time for Tree Search: " << realtime_search_ufboot << " seconds (" << convert_time(realtime_search_ufboot) << ")" << endl;
+
+    if (!early_stop)
+        sendStopMessage();
+
     // 2019-06-03: check convergence here to avoid effect of refineBootTrees
     if (boot_splits.size() >= 2 && MPIHelper::getInstance().isMaster()) {
         // check the stopping criterion for ultra-fast bootstrap
@@ -2411,11 +2429,16 @@ double IQTree::doTreeSearch() {
             cout << "WARNING: bootstrap analysis did not converge. You should rerun with higher number of iterations (-nm option)" << endl;
         
     }
+
+    double cputime_refine_ufboot_start = getCPUTime();
+    double realtime_refine_ufboot_start = getRealTime();
     
     if(params->ufboot2corr) refineBootTrees();
 
-    if (!early_stop)
-        sendStopMessage();
+    double cputime_refine_ufboot = getCPUTime() - cputime_refine_ufboot_start;
+    double realtime_refine_ufboot = getRealTime() - realtime_refine_ufboot_start;
+    cout << "CPU time for Refining Boot Trees: " << cputime_refine_ufboot << " seconds (" << convert_time(cputime_refine_ufboot) << ")" << endl;
+    cout << "Wall-clock time for Refining Boot Trees: " << realtime_refine_ufboot << " seconds (" << convert_time(realtime_refine_ufboot) << ")" << endl;
 
     readTreeString(candidateTrees.getBestTreeStrings()[0]);
 
