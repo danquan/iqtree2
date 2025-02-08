@@ -225,6 +225,8 @@ public:
     void setNumNNISearch(int numNNISearch) {
         MPIHelper::numNNISearch = numNNISearch;
     }
+    
+    MPI_SharedWindow* models;
 
     int numModels;
     

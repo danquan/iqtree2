@@ -9,6 +9,7 @@
 #include "tools.h"
 #include "timeutil.h"
 #include "gzstream.h"
+#include "MPIHelper.h"
 #include <cstdio>
 
 const char* CKP_HEADER =     "--- # IQ-TREE Checkpoint ver >= 1.6";
@@ -367,11 +368,12 @@ void Checkpoint::getSubCheckpoint(Checkpoint *target, string partial_key) {
     }
 }
 
-void Checkpoint::putSubCheckpoint(Checkpoint *source, string partial_key) {
+void Checkpoint::putSubCheckpoint(Checkpoint *source, string partial_key, bool overwrite) {
     if (!partial_key.empty())
         startStruct(partial_key);
     for (auto it = source->begin(); it != source->end(); it++) {
-        put(it->first, it->second);
+        if (overwrite || !hasKey(it->first))
+            put(it->first, it->second);
     }
     if (!partial_key.empty())
         endStruct();

@@ -2197,6 +2197,9 @@ double IQTree::doTreeSearch() {
     double cputime_init_ufboot_start = getCPUTime();
     double realtime_init_ufboot_start = getRealTime();
 
+    double cputime_init_ufboot_start = getCPUTime();
+    double realtime_init_ufboot_start = getRealTime();
+
     if (params->numInitTrees > 1) {
         cout << "--------------------------------------------------------------------" << endl;
         cout << "|             INITIALIZING CANDIDATE TREE SET                      |" << endl;
@@ -2293,6 +2296,9 @@ double IQTree::doTreeSearch() {
     // count threshold for computing bootstrap correlation
     int ufboot_count, ufboot_count_check;
     stop_rule.getUFBootCountCheck(ufboot_count, ufboot_count_check);
+
+    double cputime_search_ufboot_start = getCPUTime();
+    double realtime_search_ufboot_start = getRealTime();
 
     double cputime_search_ufboot_start = getCPUTime();
     double realtime_search_ufboot_start = getRealTime();
@@ -2413,6 +2419,14 @@ double IQTree::doTreeSearch() {
         //     ((PhyloSuperTreePlen*)this)->printNNIcasesNUM();
 
     }
+
+    double cputime_search_ufboot = getCPUTime() - cputime_search_ufboot_start;
+    double realtime_search_ufboot = getRealTime() - realtime_search_ufboot_start;
+    cout << "CPU time for Tree Search: " << cputime_search_ufboot << " seconds (" << convert_time(cputime_search_ufboot) << ")" << endl;
+    cout << "Wall-clock time for Tree Search: " << realtime_search_ufboot << " seconds (" << convert_time(realtime_search_ufboot) << ")" << endl;
+
+    if (!early_stop)
+        sendStopMessage();
 
     double cputime_search_ufboot = getCPUTime() - cputime_search_ufboot_start;
     double realtime_search_ufboot = getRealTime() - realtime_search_ufboot_start;
@@ -2707,6 +2721,7 @@ void IQTree::refineBootTrees() {
     deleteAllPartialLh();
 
     ModelsBlock *models_block = readModelsDefinition(*params);
+    Alignment* saved_aln = aln;
     
 	// do bootstrap analysis
     for (int sample = sample_start; sample < sample_end; sample++) {
@@ -2747,7 +2762,10 @@ void IQTree::refineBootTrees() {
             boot_tree->constraintTree.readConstraint(constraintTree);
         }
 
+        // set likelihood kernel
         boot_tree->setParams(params);
+        boot_tree->setLikelihoodKernel(sse);
+        boot_tree->setNumThreads(num_threads);
 
         // 2019-06-03: bug fix setting part_info properly
         if (boot_tree->isSuperTree())
@@ -2761,11 +2779,6 @@ void IQTree::refineBootTrees() {
             ((PartitionModel*)boot_tree->getModelFactory())->PartitionModel::restoreCheckpoint();
         else
             boot_tree->getModelFactory()->restoreCheckpoint();
-
-        // set likelihood kernel
-        boot_tree->setParams(params);
-        boot_tree->setLikelihoodKernel(sse);
-        boot_tree->setNumThreads(num_threads);
 
         // load the current ufboot tree
         // 2019-02-06: fix crash with -sp and -bnni
@@ -2802,6 +2815,7 @@ void IQTree::refineBootTrees() {
             // cout << "UFBoot tree " << sample+1 << ": " << boot_logl[sample] << " -> " << boot_tree->getCurScore() << endl;
             printf("UFBoot tree %d: %.2f -> %.2f\n", sample+1, boot_logl[sample], boot_tree->getCurScore());
         }
+        printf("UFBoot tree %d: %.2f -> %.2f\n", sample+1, boot_logl[sample], boot_tree->getCurScore());
 
         stringstream ostr;
         if (params->print_ufboot_trees == 2)
