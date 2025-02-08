@@ -2709,14 +2709,15 @@ void IQTree::refineBootTrees() {
     ModelsBlock *models_block = readModelsDefinition(*params);
     
 	// do bootstrap analysis
-	for (int sample = refined_samples; sample < boot_trees.size(); sample++) {
+    for (int sample = sample_start; sample < sample_end; sample++) {
         // create bootstrap alignment
         Alignment* bootstrap_alignment;
         if (aln->isSuperAlignment())
             bootstrap_alignment = new SuperAlignment;
         else
             bootstrap_alignment = new Alignment;
-        bootstrap_alignment->createBootstrapAlignment(aln, NULL, params->bootstrap_spec);
+        // bootstrap_alignment->createBootstrapAlignment(aln, NULL, params->bootstrap_spec);
+        bootstrap_alignment->buildFromPatternFreq(*aln, boot_samples_int[sample]);
 
         // create bootstrap tree
         IQTree *boot_tree;
@@ -2798,7 +2799,8 @@ void IQTree::refineBootTrees() {
             refined_trees++;
 
         if (verbose_mode >= VB_MED) {
-            cout << "UFBoot tree " << sample+1 << ": " << boot_logl[sample] << " -> " << boot_tree->getCurScore() << endl;
+            // cout << "UFBoot tree " << sample+1 << ": " << boot_logl[sample] << " -> " << boot_tree->getCurScore() << endl;
+            printf("UFBoot tree %d: %.2f -> %.2f\n", sample+1, boot_logl[sample], boot_tree->getCurScore());
         }
 
         stringstream ostr;
@@ -2836,6 +2838,19 @@ void IQTree::refineBootTrees() {
     delete models_block;
 
     cout << "Total " << refined_trees << " ufboot trees refined" << endl;
+
+    // Sync boot trees
+    MPIHelper::getInstance().barrier();
+    Checkpoint *new_checkpoint = new Checkpoint;
+    if (MPIHelper::getInstance().isWorker()) {
+        saveUFBoot(new_checkpoint);
+        MPIHelper::getInstance().sendCheckpoint(new_checkpoint, PROC_MASTER);
+    } else {
+        for (int i = 1; i < MPIHelper::getInstance().getNumProcesses(); i++) {
+            int worker = MPIHelper::getInstance().recvCheckpoint(new_checkpoint);
+            restoreUFBoot(new_checkpoint);
+        }
+    }
 
     // restore randstream
     finish_random();

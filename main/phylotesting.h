@@ -203,6 +203,8 @@ public:
      */
     void filterRates(int finished_model);
 
+    void filterRatesMPI(int finished_model);
+
     /**
      Filter out all "non-promissing" substitution models
      */
@@ -247,6 +249,9 @@ public:
                 string name = at(model).rate_name.substr(0, posR+2) + convertIntToString(cat-1);
                 if (at(prev_model).rate_name != name)
                     break;
+                
+                if (Params::getInstance().mpi_by_model && (getScore(prev_model) == 0 || getScore(prev_model) == DBL_MAX)) continue;
+
                 if (!at(prev_model).hasFlag(MF_DONE))
                     continue;
                 return prev_model;
@@ -285,6 +290,15 @@ public:
     CandidateModel evaluateAll(Params &params, PhyloTree* in_tree, ModelCheckpoint &model_info,
                      ModelsBlock *models_block, int num_threads, int brlen_type,
                      string in_model_name = "", bool merge_phase = false, bool write_info = true);
+    
+    /**
+     evaluate all models in parallel by MPI
+     */
+    CandidateModel evaluateMPI(Params &params, PhyloTree* in_tree, ModelCheckpoint &model_info,
+                     ModelsBlock *models_block, int num_threads, int brlen_type,
+                     string in_model_name = "", bool merge_phase = false, bool write_info = true);
+    
+    double getScore(int idx);
     
 private:
     

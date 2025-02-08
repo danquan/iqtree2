@@ -40,6 +40,30 @@
 
 using namespace std;
 
+class MPI_SharedWindow {
+public:
+    MPI_SharedWindow(int num_elements);
+
+    ~MPI_SharedWindow();
+
+    double get_shared_memory(int idx);
+
+    void set_shared_memory(int idx, double value);
+
+    void lock();
+
+    void unlock();
+
+    int get_and_increment(int idx);
+
+private:
+    MPI_Win window;
+    double* shared_memory;
+    int world_rank;
+    int num_elements;
+    int depth_lock;
+};
+
 class MPIHelper {
 public:
     /**
@@ -202,6 +226,9 @@ public:
         MPIHelper::numNNISearch = numNNISearch;
     }
 
+    int numModels;
+    
+    MPI_SharedWindow* models;
 private:
     int numNNISearch;
 

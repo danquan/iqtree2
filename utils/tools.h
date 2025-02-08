@@ -2310,6 +2310,8 @@ public:
     /** true to parallel ModelFinder by models instead of sites */
     bool openmp_by_model;
 
+    bool mpi_by_model;
+
     /** either MTC_AIC, MTC_AICc, MTC_BIC */
     ModelTestCriterion model_test_criterion;
 
