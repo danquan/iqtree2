@@ -2837,7 +2837,13 @@ void IQTree::refineBootTrees() {
     
     delete models_block;
 
-    cout << "Total " << refined_trees << " ufboot trees refined" << endl;
+    // Sum up the number of refined trees
+    MPIHelper::getInstance().barrier();
+
+    int total_refined_trees = 0;
+    MPI_Reduce(&refined_trees, &total_refined_trees, 1, MPI_INT, MPI_SUM, PROC_MASTER, MPI_COMM_WORLD);
+
+    cout << "Total " << total_refined_trees << " ufboot trees refined" << endl;
 
     // Sync boot trees
     MPIHelper::getInstance().barrier();
