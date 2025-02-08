@@ -38,8 +38,6 @@ using namespace std;
 #define CKP_ARRAY_RESTORE2(checkpoint, num, arr) checkpoint->getArray(#arr, num, arr)
 #define CKP_VECTOR_RESTORE2(checkpoint, arr) checkpoint->getVector(#arr, arr)
 
-#define CKP_HAS_KEY(var) checkpoint->hasKey(#var)
-
 const char CKP_SEP = '!';
 
 /** checkpoint stream */
@@ -428,9 +426,8 @@ public:
      put a checkpoint where the key string contains a given substring
      @param source checkpoint
      @param sub_key key substring to search for
-     @param overwrite true to overwrite value even if key exists
      */
-    void putSubCheckpoint(Checkpoint *source, string sub_key, bool overwrite = true);
+    void putSubCheckpoint(Checkpoint *source, string sub_key);
 
     /**
      transfer a checkpoint where the key string contains a given substring
@@ -519,11 +516,6 @@ public:
     */
     virtual void endCheckpoint();
 
-    /**
-        @return true of checkpoint is present, false otherwise
-     */
-    virtual bool hasCheckpoint() { return false; }
-    
 protected:
 
     Checkpoint *checkpoint;

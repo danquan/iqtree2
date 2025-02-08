@@ -205,8 +205,6 @@ public:
 
     void filterRatesMPI(int finished_model);
 
-    void filterRatesMPI(int finished_model);
-
     /**
      Filter out all "non-promissing" substitution models
      */

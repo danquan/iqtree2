@@ -133,10 +133,10 @@ static char *pllTreeToNewickREC(char *treestr, pllInstance *tr, partitionList *p
       if(printNames)
 	{
 	  nameptr = tr->nameList[p->number];     
-	  snprintf(treestr, 1000, "%s", nameptr);
+	  sprintf(treestr, "%s", nameptr);
 	}
       else
-	snprintf(treestr, 1000, "%d", p->number);
+	sprintf(treestr, "%d", p->number);    
 	
       while (*treestr) treestr++;
     }
@@ -160,9 +160,9 @@ static char *pllTreeToNewickREC(char *treestr, pllInstance *tr, partitionList *p
   if(p == tr->start->back) 
     {	      	 
       if(printBranchLengths && !rellTree)
-	snprintf(treestr, 10, ":0.0;\n");
+	sprintf(treestr, ":0.0;\n");
       else
-	snprintf(treestr, 10, ";\n");	 	  	
+	sprintf(treestr, ";\n");	 	  	
     }
   else 
     {                   
@@ -174,28 +174,28 @@ static char *pllTreeToNewickREC(char *treestr, pllInstance *tr, partitionList *p
 	      assert(p->bInf != (branchInfo *)NULL);
 	      
 	      if(rellTree)
-		snprintf(treestr, 1000, "%d:%8.20f", p->bInf->support, p->z[0]);
+		sprintf(treestr, "%d:%8.20f", p->bInf->support, p->z[0]);
 	      if(branchLabelSupport)
-		snprintf(treestr, 1000, ":%8.20f[%d]", p->z[0], p->bInf->support);
+		sprintf(treestr, ":%8.20f[%d]", p->z[0], p->bInf->support);
 	      if(printSHSupport)
-		snprintf(treestr, 1000, ":%8.20f[%d]", getBranchLength(tr, pr, perGene, p), p->bInf->support);
+		sprintf(treestr, ":%8.20f[%d]", getBranchLength(tr, pr, perGene, p), p->bInf->support);
 	      
 	    }
 	  else		
 	    {
 	      if(rellTree || branchLabelSupport)
-		snprintf(treestr, 1000, ":%8.20f", p->z[0]);
+		sprintf(treestr, ":%8.20f", p->z[0]);	
 	      if(printSHSupport)
-		snprintf(treestr, 1000, ":%8.20f", getBranchLength(tr, pr, perGene, p));
+		sprintf(treestr, ":%8.20f", getBranchLength(tr, pr, perGene, p));
 	    }
 	}
       else
 	{
 	  if(printBranchLengths)	    
-	    snprintf(treestr, 1000, ":%8.20f", getBranchLength(tr, pr, perGene, p));
-	  else
-	    snprintf(treestr, 1000, "%s", "\0");	    
-	}
+	    sprintf(treestr, ":%8.20f", getBranchLength(tr, pr, perGene, p));
+	  else	    
+	    sprintf(treestr, "%s", "\0");	    
+	}      
     }
   
   while (*treestr) treestr++;

@@ -88,7 +88,7 @@ public:
 		It will throw error messages if failed
 		@param in input stream
 	*/
-    virtual void readRates(string str) noexcept(false);
+	virtual void readRates(string str) throw(const char*);
 
 	/**
 		set the substitution rate parameters by a specification

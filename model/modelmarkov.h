@@ -143,28 +143,28 @@ public:
 		It will throw error messages if failed
 		@param in input stream
 	*/
-    virtual void readRates(istream &in) noexcept(false);
+	virtual void readRates(istream &in) throw(const char*, string);
 
 	/**
 		Read the rate parameters from a comma-separated string
 		It will throw error messages if failed
 		@param in input stream
 	*/
-    virtual void readRates(string str) noexcept(false);
+	virtual void readRates(string str) throw(const char*);
 
 	/**
 		Read state frequencies from an input stream. 
 		It will throw error messages if failed
 		@param in input stream
 	*/
-    virtual void readStateFreq(istream &in) noexcept(false);
+	virtual void readStateFreq(istream &in) throw(const char*);
 
 	/**
 		Read state frequencies from comma-separated string
 		It will throw error messages if failed
 		@param str input string
 	*/
-    virtual void readStateFreq(string str) noexcept(false);
+	virtual void readStateFreq(string str) throw(const char*);
 
 	/**
 		read model parameters from a file

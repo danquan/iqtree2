@@ -40,7 +40,7 @@ NxsString &NxsString::operator+=(
 	// Create a C-string representing the supplied double value. 
 	// The # causes a decimal point to always be output.
 	//
-	snprintf(tmp, 80, "%#3.6f", d);
+	sprintf(tmp, "%#3.6f", d);
 	unsigned tmplen = (unsigned)strlen(tmp);
 
 	// If the C-string has a lot of trailing zeros, lop them off
@@ -350,7 +350,7 @@ NxsString &NxsString::RightJustifyDbl(
 		erase();
 
 	char fmtstr[81];
-	snprintf(fmtstr, 80, "%%.%df", p);
+	sprintf(fmtstr, "%%.%df", p);
 	NxsString tmp;
 	tmp.PrintF(fmtstr, x);
 

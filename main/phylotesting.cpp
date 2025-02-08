@@ -814,7 +814,6 @@ void runModelFinder(Params &params, IQTree &iqtree, ModelCheckpoint &model_info,
     double cpu_time = getCPUTime();
     double real_time = getRealTime();
     model_info.setFileName((string)params.out_prefix + convertIntToString(MPIHelper::getInstance().getProcessID()) + ".model.gz");
-    model_info.setFileName((string)params.out_prefix + convertIntToString(MPIHelper::getInstance().getProcessID()) + ".model.gz");
     model_info.setDumpInterval(params.checkpoint_dump_interval);
     
     bool ok_model_file = false;
@@ -905,10 +904,6 @@ void runModelFinder(Params &params, IQTree &iqtree, ModelCheckpoint &model_info,
             best_model = CandidateModelSet().evaluateMPI(params, &iqtree,
                 model_info, models_block, params.num_threads, BRLEN_OPTIMIZE);
         else if (params.openmp_by_model)
-        if (params.mpi_by_model) 
-            best_model = CandidateModelSet().evaluateMPI(params, &iqtree,
-                model_info, models_block, params.num_threads, BRLEN_OPTIMIZE);
-        else if (params.openmp_by_model)
             best_model = CandidateModelSet().evaluateAll(params, &iqtree,
                 model_info, models_block, params.num_threads, BRLEN_OPTIMIZE);
         else
@@ -933,8 +928,7 @@ void runModelFinder(Params &params, IQTree &iqtree, ModelCheckpoint &model_info,
     delete models_block;
     
     // force to dump all checkpointing information
-    if (MPIHelper::getInstance().isMaster())
-        model_info.dump(true);
+    model_info.dump(true);
     
     // transfer models parameters
     transferModelFinderParameters(&iqtree, orig_checkpoint);
@@ -1592,17 +1586,6 @@ string CandidateModel::evaluate(Params &params,
         }
     }
 
-    // Load checkpoint from file
-    if (params.mpi_by_model) {
-        string checkpointFile = params.out_prefix;
-        checkpointFile += ".temp.ckp.gz";
-        ifstream checkpointStream(checkpointFile.c_str());
-        if (checkpointStream.is_open()) {
-            in_model_info.load(checkpointStream);
-            checkpointStream.close();
-        }
-    }
-
     //string model_name = name;
     Alignment *in_aln = aln;
     IQTree *iqtree = NULL;
@@ -1650,8 +1633,6 @@ string CandidateModel::evaluate(Params &params,
 #pragma omp critical
 #endif
     iqtree->getModelFactory()->restoreCheckpoint();
-    
-    bool rate_restored = iqtree->getRate()->hasCheckpoint();
     
     // now switch to the output checkpoint
     iqtree->getModelFactory()->setCheckpoint(&out_model_info);
@@ -1707,39 +1688,26 @@ string CandidateModel::evaluate(Params &params,
 
         iqtree->ensureNumberOfThreadsIsSet(nullptr);
         iqtree->initializeAllPartialLh();
-        
-        // try to initialise +R[k+1] from +R[k] if not restored from checkpoint
-        CandidateModel prev_info;
-        double weight_rescale = 1.0;
 
-        bool prev_rate_present = prev_info.restoreCheckpointRminus1(&in_model_info, this);
-        if (!rate_restored && prev_rate_present) {
-            iqtree->getRate()->initFromCatMinusOne(in_model_info, weight_rescale);
-            if (verbose_mode >= VB_MED)
-                cout << iqtree->getRate()->name << " initialized from " << prev_info.rate_name << endl;
-        }
-
-        for (int step = 0; step < 5; step++) {
-            double cur = getRealTime();
+        for (int step = 0; step < 2; step++) {
             new_logl = iqtree->getModelFactory()->optimizeParameters(brlen_type, false,
                 params.modelfinder_eps, TOL_GRADIENT_MODELTEST);
             tree_len = iqtree->treeLength();
             iqtree->getModelFactory()->saveCheckpoint();
             iqtree->saveCheckpoint();
-            printf("Time for optimization: %.2f sec\n", getRealTime() - cur);
 
             // check if logl(+R[k]) is worse than logl(+R[k-1])
-            if (!prev_rate_present) break;
+            CandidateModel prev_info;
+            if (!prev_info.restoreCheckpointRminus1(&in_model_info, this)) break;
             if (prev_info.logl < new_logl + params.modelfinder_eps) break;
-            weight_rescale *= 0.5;
-            iqtree->getRate()->initFromCatMinusOne(in_model_info, weight_rescale);
-            cout << iqtree->getRate()->name << " reinitialized from " << prev_info.rate_name 
-                 << " with factor " << weight_rescale << endl;
+            if (step == 0) {
+                iqtree->getRate()->initFromCatMinusOne();
+            } else if (new_logl < prev_info.logl - params.modelfinder_eps*10.0) {
+                outWarning("Log-likelihood " + convertDoubleToString(new_logl) + " of " +
+                           getName() + " worse than " + prev_info.getName() + " " + convertDoubleToString(prev_info.logl));
+            }
         }
-        if (prev_rate_present && new_logl < prev_info.logl - params.modelfinder_eps*10.0) {
-            outWarning("Log-likelihood " + convertDoubleToString(new_logl) + " of " +
-                       getName() + " worse than " + prev_info.getName() + " " + convertDoubleToString(prev_info.logl));
-        }
+
     }
 
     // sum in case of adjusted df and logl already stored
@@ -2546,10 +2514,6 @@ double CandidateModelSet::getScore(int idx) {
     return ((Params::getInstance().mpi_by_model) ? MPIHelper::getInstance().models->get_shared_memory(idx) : at(idx).getScore());
 }
 
-double CandidateModelSet::getScore(int idx) {
-    return ((Params::getInstance().mpi_by_model) ? MPIHelper::getInstance().models->get_shared_memory(idx) : at(idx).getScore());
-}
-
 void CandidateModelSet::filterRates(int finished_model) {
     if (Params::getInstance().score_diff_thres < 0)
         return;
@@ -2573,39 +2537,6 @@ void CandidateModelSet::filterRates(int finished_model) {
     for (model = finished_model+1; model < size(); model++)
         if (ok_rates.find(at(model).orig_rate_name) == ok_rates.end())
             at(model).setFlag(MF_IGNORED);
-}
-
-void CandidateModelSet::filterRatesMPI(int finished_model) {
-    if (Params::getInstance().score_diff_thres < 0)
-        return;
-    
-    double best_score = DBL_MAX;
-    ASSERT(finished_model >= 0);
-    int model;
-    for (model = 0; model <= finished_model; model++) {
-        if (at(model).subst_name == at(0).subst_name) {
-            if (getScore(model) == 0) 
-                return; // only works if all models done
-            best_score = min(best_score, getScore(model));
-        }
-    }
-    
-    MPIHelper::getInstance().barrier();
-    
-    double ok_score = best_score + Params::getInstance().score_diff_thres;
-    set<string> ok_rates;
-    for (model = 0; model <= finished_model; model++) {
-
-        if (getScore(model) <= ok_score) {
-            string rate_name = at(model).orig_rate_name;
-            ok_rates.insert(rate_name);
-
-            printf("Process %d, Rate %s\n", MPIHelper::getInstance().getProcessID(), rate_name.c_str());
-        }
-    }
-    for (model = finished_model+1; model < size(); model++)
-        if (ok_rates.find(at(model).orig_rate_name) == ok_rates.end())
-            MPIHelper::getInstance().models->set_shared_memory(model, DBL_MAX);
 }
 
 void CandidateModelSet::filterRatesMPI(int finished_model) {
@@ -2729,7 +2660,7 @@ CandidateModel CandidateModelSet::test(Params &params, PhyloTree* in_tree, Model
             cout << "codon/AA/DNA";
         else
             cout << getSeqTypeName(in_tree->aln->seq_type);
-        cout << " models (sample size: " << ssize << " epsilon: " << params.modelfinder_eps << ") ..." << endl;
+        cout << " models (sample size: " << ssize << ") ..." << endl;
         if (params.model_test_and_tree == 0)
             cout << " No. Model         -LnL         df  AIC          AICc         BIC" << endl;
 	}
@@ -2883,9 +2814,6 @@ CandidateModel CandidateModelSet::test(Params &params, PhyloTree* in_tree, Model
             }
         }
 
-        // BQM 2024-06-22: save checkpoint for starting values of next model
-        model_info.putSubCheckpoint(&out_model_info, "");
-
 		if (at(model).AIC_score < best_score_AIC) {
             best_model_AIC = model;
             best_score_AIC = at(model).AIC_score;
@@ -2893,7 +2821,7 @@ CandidateModel CandidateModelSet::test(Params &params, PhyloTree* in_tree, Model
                 best_tree_AIC = tree_string;
             // only update model_info with better model
             if (params.model_test_criterion == MTC_AIC) {
-                //model_info.putSubCheckpoint(&out_model_info, "");
+                model_info.putSubCheckpoint(&out_model_info, "");
                 best_aln = at(model).aln;
             }
         }
@@ -2904,7 +2832,7 @@ CandidateModel CandidateModelSet::test(Params &params, PhyloTree* in_tree, Model
                 best_tree_AICc = tree_string;
             // only update model_info with better model
             if (params.model_test_criterion == MTC_AICC) {
-                //model_info.putSubCheckpoint(&out_model_info, "");
+                model_info.putSubCheckpoint(&out_model_info, "");
                 best_aln = at(model).aln;
             }
         }
@@ -2916,7 +2844,7 @@ CandidateModel CandidateModelSet::test(Params &params, PhyloTree* in_tree, Model
                 best_tree_BIC = tree_string;
             // only update model_info with better model
             if (params.model_test_criterion == MTC_BIC) {
-                //model_info.putSubCheckpoint(&out_model_info, "");
+                model_info.putSubCheckpoint(&out_model_info, "");
                 best_aln = at(model).aln;
             }
         }

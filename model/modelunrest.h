@@ -48,7 +48,6 @@ public:
     virtual void restoreCheckpoint();
 
 protected:
-	void writeInfo(ostream &out);
     virtual void setRates();
 };
 
