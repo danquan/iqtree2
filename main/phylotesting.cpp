@@ -1577,6 +1577,7 @@ string CandidateModel::evaluate(Params &params,
 {
     // Load checkpoint from file
     if (params.mpi_by_model) {
+        MPIHelper::getInstance().models->lock();
         string checkpointFile = params.out_prefix;
         checkpointFile += ".temp.ckp.gz";
         ifstream checkpointStream(checkpointFile.c_str());
@@ -1584,6 +1585,7 @@ string CandidateModel::evaluate(Params &params,
             in_model_info.load(checkpointStream);
             checkpointStream.close();
         }
+        MPIHelper::getInstance().models->unlock();
     }
 
     //string model_name = name;
@@ -3303,12 +3305,15 @@ CandidateModel CandidateModelSet::evaluateMPI(Params &params, PhyloTree* in_tree
                 model_info.putSubCheckpoint(&out_model_info, "");
 
                 if (model > rate_block) {
+                    MPIHelper::getInstance().models->lock();
                     // Dump checkpoint to file
                     string checkpointFile = params.out_prefix;
                     checkpointFile += ".temp.ckp.gz";
 
                     ofstream outCheckpoint(checkpointFile.c_str());
                     model_info.dump(outCheckpoint);
+                    
+                    MPIHelper::getInstance().models->unlock();
                 }
             }
 
