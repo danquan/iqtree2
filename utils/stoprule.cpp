@@ -112,11 +112,11 @@ void StopRule::restoreCheckpoint() {
 //}
 
 bool StopRule::meetStopCondition(int cur_iteration, double cur_correlation) {
-	if (MPIHelper::getInstance().isWorker()) {
-		return false;
-	}
 	if (should_stop) {
 		return true;
+	}
+	if (MPIHelper::getInstance().isWorker()) {
+		return false;
 	}
 	switch (stop_condition) {
 		case SC_FIXED_ITERATION:

@@ -3035,6 +3035,8 @@ void runTreeReconstruction(Params &params, IQTree* &iqtree) {
     // prune stable taxa
     pruneTaxa(params, *iqtree, pattern_lh, pruned_taxa, linked_name);
 
+    MPIHelper::getInstance().barrier();
+
     /***************************************** DO STOCHASTIC TREE SEARCH *******************************************/
     if (params.min_iterations > 0 && !params.tree_spr) {
         iqtree->doTreeSearch();
