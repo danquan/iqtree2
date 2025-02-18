@@ -3382,6 +3382,7 @@ CandidateModel CandidateModelSet::evaluateMPI(Params &params, PhyloTree* in_tree
                 int model = stoi(it->first);
                 stringstream str(it->second);
                 str >> at(model).subst_name >> at(model).rate_name >> at(model).logl >> at(model).df >> at(model).tree_len >> at(model).AIC_score >> at(model).AICc_score >> at(model).BIC_score;
+                if (at(model).rate_name == "@") at(model).rate_name = "";
             }
 
             for (int model = 0; model <= rate_block; ++model)

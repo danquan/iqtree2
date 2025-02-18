@@ -974,7 +974,7 @@ void IQTree::initializeModel(Params &params, string model_name, ModelsBlock *mod
                 if (root)
                     ((PhyloSuperTree*)this)->mapTrees();
 
-            } else {
+            } else {                
                 setModelFactory(new ModelFactory(params, model_name, this, models_block));
             }
         }
@@ -982,7 +982,7 @@ void IQTree::initializeModel(Params &params, string model_name, ModelsBlock *mod
         outError(str);
     }
     setModel(getModelFactory()->model);
-    setRate(getModelFactory()->site_rate);
+    setRate(getModelFactory()->site_rate);    
     getModelFactory()->setCheckpoint(checkpoint);
     /*
      * MDW: I don't understand why/how checkpointing is being used,

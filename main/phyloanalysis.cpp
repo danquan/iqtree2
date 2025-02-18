@@ -2777,7 +2777,6 @@ void runTreeReconstruction(Params &params, IQTree* &iqtree) {
 
     /*********************** INITIAL MODEL OPTIMIZATION *****************/
 
-
     if (!iqtree->getModelFactory()) {
         iqtree->initializeModel(params, iqtree->aln->model_name, models_block);
     }
@@ -2787,7 +2786,6 @@ void runTreeReconstruction(Params &params, IQTree* &iqtree) {
 //    iqtree.restoreCheckpoint();
 
     delete models_block;
-
     // UpperBounds analysis. Here, to analyse the initial tree without any tree search or optimization
     /*
     if (params.upper_bound) {
@@ -3692,7 +3690,6 @@ void runStandardBootstrap(Params &params, Alignment *alignment, IQTree *tree) {
     double start_real_time = getRealTime();
 
     startTreeReconstruction(params, tree, *model_info);
-    
     // 2018-06-21: bug fix: alignment might be changed by -m ...MERGE
     alignment = tree->aln;
     
