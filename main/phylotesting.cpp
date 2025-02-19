@@ -3385,12 +3385,11 @@ CandidateModel CandidateModelSet::evaluateMPI(Params &params, PhyloTree* in_tree
                 if (at(model).rate_name == "@") at(model).rate_name = "";
             }
 
-            for (int model = 0; model <= rate_block; ++model)
-                if (MPIHelper::getInstance().models->get_shared_memory(model) != DBL_MAX)
-                    at(model).setFlag(MF_DONE);
-            
             checkpoint->clear();
-        }
+        }    
+        for (int model = 0; model < num_models; ++model)
+            if (at(model).getScore() != DBL_MAX)
+                at(model).setFlag(MF_DONE);
     };
 
     if (MPIHelper::getInstance().isMaster()) {
@@ -3475,29 +3474,6 @@ CandidateModel CandidateModelSet::evaluateMPI(Params &params, PhyloTree* in_tree
 
     merge();
 
-    for (int model = 0; model < num_models; ++model) {
-        // // restore checkpoint
-        // string val;
-        // if (!checkpoint->getString(std::to_string(model), val)) continue;
-
-        // stringstream str(val);
-        // str >> at(model).subst_name >> at(model).rate_name >> at(model).logl >> at(model).df >> at(model).tree_len >> at(model).AIC_score >> at(model).AICc_score >> at(model).BIC_score;
-
-        // if (MPIHelper::getInstance().getProcessID() == 1) {
-        //     printf("%3d  %-13s %12.3f %3d %12.3f %12.3f %12.3f\n",
-        //            model + 1,
-        //            at(model).getName().c_str(),
-        //            -at(model).logl,
-        //            at(model).df,
-        //            at(model).AIC_score,
-        //            at(model).AICc_score,
-        //            at(model).BIC_score);
-        // }
-
-        if (at(model).getScore() != DBL_MAX)
-            at(model).setFlag(MF_DONE);
-    }
-
     MPIHelper::getInstance().barrier();
     // store the best model
     ModelTestCriterion criteria[] = {MTC_AIC, MTC_AICC, MTC_BIC};
@@ -3510,7 +3486,7 @@ CandidateModel CandidateModelSet::evaluateMPI(Params &params, PhyloTree* in_tree
     /* sort models by their scores */
     multimap<double,int> model_sorted;
     for (int64_t model = 0; model < num_models; model++)
-        if (MPIHelper::getInstance().models->get_shared_memory(model) != DBL_MAX) {
+        if (at(model).hasFlag(MF_DONE)) {
             model_sorted.insert(multimap<double,int>::value_type(at(model).getScore(), model));
         }
     string model_list;
