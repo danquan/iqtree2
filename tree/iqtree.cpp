@@ -2334,13 +2334,13 @@ double IQTree::doTreeSearch() {
             if (MPIHelper::getInstance().isWorker()) {
                 syncCurrentTree();
             } else {
-                while (syncWorkers) {
-                    syncCurrentTree();
+                if (MPIHelper::getInstance().getNumProcesses() > 1) {
+                    while (syncWorkers) syncCurrentTree();
                 }
             }
         } else {
             if (MPIHelper::getInstance().isWorker() || MPIHelper::getInstance().gotMessage())
-            syncCurrentTree();
+                syncCurrentTree();
         }
 
 
