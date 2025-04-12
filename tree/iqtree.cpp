@@ -2298,7 +2298,7 @@ double IQTree::doTreeSearch() {
     double realtime_search_ufboot_start = getRealTime();
 
     while (!stop_rule.meetStopCondition(stop_rule.getCurIt(), cur_correlation)) {
-
+        syncWorkers = 1;
         searchinfo.curIter = stop_rule.getCurIt();
         // estimate logl_cutoff for bootstrap
         if (!boot_orig_logl.empty())
@@ -2323,12 +2323,25 @@ double IQTree::doTreeSearch() {
         pair<int, int> nniInfos; // <num_NNIs, num_steps>
         nniInfos = doNNISearch();
         curTree = getTreeString();
+        if (Params::getInstance().consistent_treesearch) {
+            curScore = computeLogL();
+        }
         int pos = addTreeToCandidateSet(curTree, curScore, true, MPIHelper::getInstance().getProcessID());
         if (pos != -2 && pos != -1 && (Params::getInstance().fixStableSplits || Params::getInstance().adaptPertubation))
             candidateTrees.computeSplitOccurences(Params::getInstance().stableSplitThreshold);
 
-        if (MPIHelper::getInstance().isWorker() || MPIHelper::getInstance().gotMessage())
+        if (Params::getInstance().consistent_treesearch) {
+            if (MPIHelper::getInstance().isWorker()) {
+                syncCurrentTree();
+            } else {
+                while (syncWorkers) {
+                    syncCurrentTree();
+                }
+            }
+        } else {
+            if (MPIHelper::getInstance().isWorker() || MPIHelper::getInstance().gotMessage())
             syncCurrentTree();
+        }
 
 
         // TODO: cannot check yet, need to somehow return treechanged
@@ -4464,7 +4477,7 @@ void IQTree::syncCurrentTree() {
         CKP_RESTORE(tree);
         CKP_RESTORE(score);
         int pos = addTreeToCandidateSet(tree, score, true, worker);
-        if (pos >= 0 && pos < params->popSize) {
+        if (!Params::getInstance().consistent_treesearch && pos >= 0 && pos < params->popSize) {
             // candidate set is changed, update for other workers
             for (int w = 0; w < candidateset_changed.size(); w++)
                 if (w != worker)
@@ -4477,16 +4490,32 @@ void IQTree::syncCurrentTree() {
 
         // send candidate trees to worker
         checkpoint->clear();
-        if (boot_samples.size() > 0)
-            CKP_SAVE(logl_cutoff);
-        if (candidateset_changed[worker]) {
-            CandidateSet cset = candidateTrees.getBestCandidateTrees(Params::getInstance().popSize);
-            cset.setCheckpoint(checkpoint);
-            cset.saveCheckpoint();
-            candidateset_changed[worker] = false;
-            MPIHelper::getInstance().increaseTreeSent(Params::getInstance().popSize);
+
+        if (Params::getInstance().consistent_treesearch) {
+            if (++syncWorkers == MPIHelper::getInstance().getNumProcesses()) {
+                if (boot_samples.size() > 0)
+                    CKP_SAVE(logl_cutoff);
+                for (int worker = 1; worker < MPIHelper::getInstance().getNumProcesses(); ++worker) {
+                    CandidateSet cset = candidateTrees.getBestCandidateTrees(Params::getInstance().popSize);
+                    cset.setCheckpoint(checkpoint);
+                    cset.saveCheckpoint();
+                    MPIHelper::getInstance().increaseTreeSent(Params::getInstance().popSize);
+                    MPIHelper::getInstance().sendCheckpoint(checkpoint, worker);
+                }
+                syncWorkers = 0;      
+            }
+        } else {
+            if (boot_samples.size() > 0)
+                CKP_SAVE(logl_cutoff);
+            if (candidateset_changed[worker]) {
+                CandidateSet cset = candidateTrees.getBestCandidateTrees(Params::getInstance().popSize);
+                cset.setCheckpoint(checkpoint);
+                cset.saveCheckpoint();
+                candidateset_changed[worker] = false;
+                MPIHelper::getInstance().increaseTreeSent(Params::getInstance().popSize);
+            }
+            MPIHelper::getInstance().sendCheckpoint(checkpoint, worker);
         }
-        MPIHelper::getInstance().sendCheckpoint(checkpoint, worker);
     } else {
         // worker: always send tree to MASTER
         tree = getTreeString();

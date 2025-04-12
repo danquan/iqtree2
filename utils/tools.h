@@ -2312,6 +2312,8 @@ public:
 
     bool mpi_by_model;
 
+    bool consistent_treesearch;
+
     /** either MTC_AIC, MTC_AICc, MTC_BIC */
     ModelTestCriterion model_test_criterion;
 

@@ -878,6 +878,8 @@ protected:
     // true if best candidate tree is changed
     bool bestcandidate_changed;
 
+    int syncWorkers;
+
     /**
             number of IQPNNI iterations
      */
