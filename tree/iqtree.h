@@ -775,10 +775,10 @@ public:
     vector<BootValType* > boot_samples;
 
     /** starting sample for UFBoot, used for MPI */
-    int sample_start;
+    int sample_start = 0;
 
     /** end sample for UFBoot, used for MPI */
-    int sample_end;
+    int sample_end = 0;
 
     /** newick string of corresponding bootstrap trees */
     StrVector boot_trees;
