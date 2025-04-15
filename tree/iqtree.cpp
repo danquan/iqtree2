@@ -2331,14 +2331,17 @@ double IQTree::doTreeSearch() {
             candidateTrees.computeSplitOccurences(Params::getInstance().stableSplitThreshold);
 
         if (Params::getInstance().consistent_treesearch) {
+            bool isStopMessage = MPIHelper::getInstance().isWorker();
             if (MPIHelper::getInstance().isWorker()) {
-                syncCurrentTree();
+                isStopMessage = syncCurrentTree();
             } else {
                 if (MPIHelper::getInstance().getNumProcesses() > 1) {
                     while (syncWorkers) syncCurrentTree();
                 }
             }
-            MPIHelper::getInstance().barrier();
+            if (!isStopMessage) {
+                MPIHelper::getInstance().barrier();
+            }
         } else {
             if (MPIHelper::getInstance().isWorker() || MPIHelper::getInstance().gotMessage())
                 syncCurrentTree();
@@ -2850,8 +2853,6 @@ void IQTree::refineBootTrees() {
 	}
     
     delete models_block;
-
-    cout << "Checkpoint 4 \n";
 
     // Sum up the number of refined trees
     MPIHelper::getInstance().barrier();
@@ -4464,9 +4465,9 @@ void IQTree::syncCandidateTrees(int nTrees, bool updateStopRule) {
 #endif
 }
 
-void IQTree::syncCurrentTree() {
+bool IQTree::syncCurrentTree() {
     if (MPIHelper::getInstance().getNumProcesses() == 1)
-        return;
+        return false;
 #ifdef _IQTREE_MPI
     //------ BLOCKING COMMUNICATION ------//
     Checkpoint *checkpoint = new Checkpoint;
@@ -4536,6 +4537,8 @@ void IQTree::syncCurrentTree() {
         if (checkpoint->getBool("stop")) {
             cout << "Worker " << MPIHelper::getInstance().getProcessID() << " gets STOP message!" << endl;
             stop_rule.shouldStop();
+            delete checkpoint;
+            return true;
         } else {
             CandidateSet cset;
             cset.setCheckpoint(checkpoint);
@@ -4550,6 +4553,7 @@ void IQTree::syncCurrentTree() {
 
     delete checkpoint;
 
+    return false;
 #endif
 }
 
