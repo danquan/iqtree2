@@ -2337,8 +2337,8 @@ double IQTree::doTreeSearch() {
                 if (MPIHelper::getInstance().getNumProcesses() > 1) {
                     while (syncWorkers) syncCurrentTree();
                 }
-                MPIHelper::getInstance().barrier();
             }
+            MPIHelper::getInstance().barrier();
         } else {
             if (MPIHelper::getInstance().isWorker() || MPIHelper::getInstance().gotMessage())
                 syncCurrentTree();
