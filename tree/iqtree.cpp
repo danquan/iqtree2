@@ -2337,6 +2337,7 @@ double IQTree::doTreeSearch() {
                 if (MPIHelper::getInstance().getNumProcesses() > 1) {
                     while (syncWorkers) syncCurrentTree();
                 }
+                MPIHelper::getInstance().barrier();
             }
         } else {
             if (MPIHelper::getInstance().isWorker() || MPIHelper::getInstance().gotMessage())
@@ -2711,23 +2712,15 @@ void IQTree::refineBootTrees() {
 
     int refined_samples = 0;
 
-    cout << "Checkpoint 1 \n";
-
     checkpoint->startStruct("UFBoot");
     if (CKP_RESTORE(refined_samples))
         cout << "CHECKPOINT: " << refined_samples << " refined samples restored" << endl;
     checkpoint->endStruct();
-
-    cout << "Checkpoint 2 \n";
     
     // 2018-08-17: delete duplicated memory
     deleteAllPartialLh();
 
     ModelsBlock *models_block = readModelsDefinition(*params);
-    cout << "Checkpoint 3 \n";
-
-    cout << "Sample start: " << sample_start << endl;
-    cout << "Sample end: " << sample_end << endl;
     
 	// do bootstrap analysis
     for (int sample = sample_start; sample < sample_end; sample++) {
