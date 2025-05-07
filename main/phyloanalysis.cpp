@@ -3064,6 +3064,7 @@ void runTreeReconstruction(Params &params, IQTree* &iqtree) {
 //            ((PhyloSuperTree*) iqtree)->mapTrees();
 
     if (!MPIHelper::getInstance().isMaster()) {
+        iqtree->setCurScore(iqtree->computeLikelihood());
         delete[] pattern_lh;
         return;
     }

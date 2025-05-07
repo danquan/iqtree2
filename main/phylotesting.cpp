@@ -3197,11 +3197,13 @@ CandidateModel CandidateModelSet::evaluateAll(Params &params, PhyloTree* in_tree
 
 CandidateModel CandidateModelSet::evaluateMPI(Params &params, PhyloTree* in_tree, ModelCheckpoint &model_info,
                                     ModelsBlock *models_block, int num_threads, int brlen_type,
-                                    string in_model_name, bool merge_phase, bool write_info) 
+                                    string in_model_name, bool merge_phase, bool generate_candidates, bool skip_all_when_drop) 
 {
     string checkpointFile = params.out_prefix;
     checkpointFile += ".temp.ckp.gz";
-    remove(checkpointFile.c_str());
+    
+    if (MPIHelper::getInstance().isMaster())
+        remove(checkpointFile.c_str());
 
     // ModelCheckpoint *checkpoint = &model_info;
 
@@ -3210,46 +3212,45 @@ CandidateModel CandidateModelSet::evaluateMPI(Params &params, PhyloTree* in_tree
     Alignment *prot_aln = NULL;
     Alignment *dna_aln = NULL;
     bool do_modelomatic = params.modelomatic && in_tree->aln->seq_type == SEQ_CODON;
-    
-    if (in_model_name.empty()) {
-        generate(params, in_tree->aln, params.model_test_separate_rate, merge_phase);
-        if (do_modelomatic) {
-            // generate models for protein
-            // adapter coefficient according to Whelan et al. 2015
-            prot_aln = in_tree->aln->convertCodonToAA();
-            int adjusted_df;
-            double adjusted_logl = computeAdapter(in_tree->aln, prot_aln, adjusted_df);
-            if (write_info)
+
+    if (generate_candidates) {
+        if (in_model_name.empty()) {
+            generate(params, in_tree->aln, params.model_test_separate_rate, merge_phase);
+            if (do_modelomatic) {
+                // generate models for protein
+                // adapter coefficient according to Whelan et al. 2015
+                prot_aln = in_tree->aln->convertCodonToAA();
+                int adjusted_df;
+                double adjusted_logl = computeAdapter(in_tree->aln, prot_aln, adjusted_df);
                 cout << "Adjusted LnL: " << adjusted_logl << "  df: " << adjusted_df << endl;
-            size_t start = size();
-            generate(params, prot_aln, params.model_test_separate_rate, merge_phase);
-            size_t i;
-            for (i = start; i < size(); i++) {
-                at(i).logl = adjusted_logl;
-                at(i).df = adjusted_df;
+                size_t start = size();
+                generate(params, prot_aln, params.model_test_separate_rate, merge_phase);
+                size_t i;
+                for (i = start; i < size(); i++) {
+                    at(i).logl = adjusted_logl;
+                    at(i).df = adjusted_df;
+                }
+                
+                // generate models for DNA
+                dna_aln = in_tree->aln->convertCodonToDNA();
+                start = size();
+                generate(params, dna_aln, params.model_test_separate_rate, merge_phase);
+                for (i = start; i < size(); i++) {
+                    at(i).setFlag(MF_SAMPLE_SIZE_TRIPLE);
+                }
             }
-            
-            // generate models for DNA
-            dna_aln = in_tree->aln->convertCodonToDNA();
-            start = size();
-            generate(params, dna_aln, params.model_test_separate_rate, merge_phase);
-            for (i = start; i < size(); i++) {
-                at(i).setFlag(MF_SAMPLE_SIZE_TRIPLE);
-            }
+        } else {
+            push_back(CandidateModel(in_model_name, "", in_tree->aln));
         }
-    } else {
-        push_back(CandidateModel(in_model_name, "", in_tree->aln));
     }
 
-    if (write_info) {
-        cout << "ModelFinder will test " << size() << " ";
-        if (do_modelomatic)
-            cout << "codon/AA/DNA";
-        else
-            cout << getSeqTypeName(in_tree->aln->seq_type);
-        cout << " models (sample size: " << in_tree->aln->getNSite() << ") ..." << endl;
-        cout << " No. Model         -LnL         df  AIC          AICc         BIC" << endl;
-    }
+    cout << "ModelFinder will test " << size() << " ";
+    if (do_modelomatic)
+        cout << "codon/AA/DNA";
+    else
+        cout << getSeqTypeName(in_tree->aln->seq_type);
+    cout << " models (sample size: " << in_tree->aln->getNSite() << ") ..." << endl;
+    cout << " No. Model         -LnL         df  AIC          AICc         BIC" << endl;
 
     // detect rate hetegeneity automatically or not
     bool auto_rate = merge_phase ? iEquals(params.merge_rates, "AUTO") : iEquals(params.ratehet_set, "AUTO");
@@ -3268,13 +3269,15 @@ CandidateModel CandidateModelSet::evaluateMPI(Params &params, PhyloTree* in_tree
                 break;
     }
 
+    if (!generate_candidates) {
+        rate_block = -1;
+    }    
+
     int64_t num_models = size();
 
     Checkpoint *checkpoint = new Checkpoint;
 
     MPIHelper::getInstance().models = new MPI_SharedWindow(num_models + 1);
-
-    // initialzie all model scores to 0 (not been evaluated)
 
     MPIHelper::getInstance().barrier();
 
@@ -3406,8 +3409,8 @@ CandidateModel CandidateModelSet::evaluateMPI(Params &params, PhyloTree* in_tree
 
     MPIHelper::getInstance().barrier();
     
-    filterRatesMPI(rate_block);
-    MPIHelper::getInstance().models->set_shared_memory(num_models, rate_block);
+    if (rate_block > 0) filterRatesMPI(rate_block);
+    MPIHelper::getInstance().models->set_shared_memory(num_models, rate_block + 1);
 
     MPIHelper::getInstance().barrier();
 
@@ -3514,8 +3517,9 @@ CandidateModel CandidateModelSet::evaluateMPI(Params &params, PhyloTree* in_tree
         delete dna_aln;
     if (prot_aln)
         delete prot_aln;
-    
-    remove(checkpointFile.c_str());
+
+    if (MPIHelper::getInstance().isMaster()) 
+        remove(checkpointFile.c_str());
 
     return at(best_model);
 }
@@ -3635,7 +3639,7 @@ CandidateModel runModelSelection(Params &params, IQTree &iqtree, ModelCheckpoint
     real_time = getRealTime();
     
     // handling checkpoint file
-    model_info.setFileName((string)params.out_prefix + ".model.gz");
+    model_info.setFileName((string)params.out_prefix + convertIntToString(MPIHelper::getInstance().getProcessID()) + ".model.gz");
     model_info.setDumpInterval(params.checkpoint_dump_interval);
     ok_model_file = false;
     if (!params.model_test_again) {
@@ -3826,9 +3830,14 @@ CandidateModel runModelSelection(Params &params, IQTree &iqtree, ModelCheckpoint
         skip_all_when_drop = false;
     }
     // model selection
-    best_model = candidate_models.test(params, &iqtree, model_info, models_block, params.num_threads, BRLEN_OPTIMIZE,
+    if (params.mpi_by_model) {
+        best_model = candidate_models.evaluateMPI(params, &iqtree, model_info, models_block,
+                                       params.num_threads, BRLEN_OPTIMIZE, in_model_name, merge_phase, generate_candidates, skip_all_when_drop);
+    } else {
+        best_model = candidate_models.test(params, &iqtree, model_info, models_block, params.num_threads, BRLEN_OPTIMIZE,
                                        set_name, in_model_name, merge_phase, generate_candidates, skip_all_when_drop);
-    
+    }
+
     iqtree.aln->model_name = best_model.getName();
     best_subst_name = best_model.subst_name;
     best_rate_name = best_model.rate_name;
@@ -4039,7 +4048,7 @@ void optimiseQMixModel_method_update(Params &params, IQTree* &iqtree, ModelCheck
             model_str = best_subst_name;
         }
     } while (better_model && getClassNum(best_subst_name)+1 <= params.max_mix_cats);
-    
+
     best_subst_name = model_str;
     
     if (params.opt_rhas_again) {
@@ -4068,8 +4077,8 @@ void optimiseQMixModel(Params &params, IQTree* &iqtree, ModelCheckpoint &model_i
     bool test_only = (params.model_name == "MIX+MF");
     params.model_name = "";
     
-    if (MPIHelper::getInstance().getNumProcesses() > 1)
-        outError("Error! The option -m '" + params.model_name + "' does not support MPI parallelization");
+    // if (MPIHelper::getInstance().getNumProcesses() > 1)
+    //    outError("Error! The option -m '" + params.model_name + "' does not support MPI parallelization");
     
     if (iqtree->isSuperTree())
         outError("Error! The option -m '" + params.model_name + "' cannot work on data set with partitions");

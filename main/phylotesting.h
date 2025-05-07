@@ -296,7 +296,7 @@ public:
      */
     CandidateModel evaluateMPI(Params &params, PhyloTree* in_tree, ModelCheckpoint &model_info,
                      ModelsBlock *models_block, int num_threads, int brlen_type,
-                     string in_model_name = "", bool merge_phase = false, bool write_info = true);
+                     string in_model_name = "", bool merge_phase = false, bool generate_candidates = true, bool skip_all_when_drop = false);
     
     double getScore(int idx);
     
